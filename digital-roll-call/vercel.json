@@ -1,0 +1,5 @@
+{
+  "buildCommand": "cd digital-roll-call && npm install && npm run build",
+  "outputDirectory": "digital-roll-call/dist",
+  "framework": "vite"
+}

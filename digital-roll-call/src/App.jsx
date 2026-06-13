@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import {
   BrowserRouter as Router,
   Routes,
@@ -19,11 +19,9 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import LogoutIcon from '@mui/icons-material/Logout';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './firebase';
-
-import Login from './pages/Login';
-import SubmitAttendance from './pages/SubmitAttendance';
-import Dashboard from './pages/Dashboard';
-
+const Login = React.lazy(() => import('./pages/Login'));
+const SubmitAttendance = React.lazy(() => import('./pages/SubmitAttendance'));
+const Dashboard = React.lazy(() => import('./pages/Dashboard'));
 const theme = createTheme({
   palette: {
     primary:   { main: '#000080' }, // Navy
@@ -182,24 +180,30 @@ function App() {
 
         {/* mt: 8 pushes content below the fixed AppBar (64px height) */}
         <Box sx={{ mt: user ? 8 : 0, p: user ? 3 : 0 }}>
-          <Routes>
-            <Route
-              path="/login"
-              element={!user ? <Login /> : <Navigate to="/dashboard" />}
-            />
-            <Route
-              path="/dashboard"
-              element={user ? <Dashboard /> : <Navigate to="/login" />}
-            />
-            <Route
-              path="/submit-attendance"
-              element={user ? <SubmitAttendance /> : <Navigate to="/login" />}
-            />
-            <Route
-              path="*"
-              element={<Navigate to={user ? '/dashboard' : '/login'} />}
-            />
-          </Routes>
+          <Suspense fallback={
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}>
+              <CircularProgress />
+            </Box>
+          }>
+            <Routes>
+              <Route
+                path="/login"
+                element={!user ? <Login /> : <Navigate to="/dashboard" />}
+              />
+              <Route
+                path="/dashboard"
+                element={user ? <Dashboard /> : <Navigate to="/login" />}
+              />
+              <Route
+                path="/submit-attendance"
+                element={user ? <SubmitAttendance /> : <Navigate to="/login" />}
+              />
+              <Route
+                path="*"
+                element={<Navigate to={user ? '/dashboard' : '/login'} />}
+              />
+            </Routes>
+          </Suspense>
         </Box>
       </Router>
     </ThemeProvider>
