@@ -6,28 +6,35 @@ import {
   Navigate,
   Link,
   useLocation,
+  useNavigate,
 } from 'react-router-dom';
 import { ThemeProvider, createTheme, useTheme } from '@mui/material/styles';
 import {
   CssBaseline, AppBar, Toolbar, Typography, Button,
-  Box, CircularProgress, useMediaQuery, IconButton, Drawer,
-  List, ListItem, ListItemButton, ListItemIcon, ListItemText,
+  Box, CircularProgress, useMediaQuery, IconButton,
+  BottomNavigation, BottomNavigationAction, Paper, Badge, Fab,
 } from '@mui/material';
-import MenuIcon from '@mui/icons-material/Menu';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import LogoutIcon from '@mui/icons-material/Logout';
+import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { auth } from './firebase';
+import { collection, doc, getDoc, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
+import { auth, db } from './firebase';
+
 const Login = React.lazy(() => import('./pages/Login'));
 const SubmitAttendance = React.lazy(() => import('./pages/SubmitAttendance'));
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
+const PendingApproval = React.lazy(() => import('./pages/PendingApproval'));
+const PendingApprovals = React.lazy(() => import('./pages/PendingApprovals'));
+const Profile = React.lazy(() => import('./pages/Profile'));
+
 const theme = createTheme({
   palette: {
-    primary:   { main: '#000080' }, // Navy
-    secondary: { main: '#800000' }, // Maroon
-    error:     { main: '#c62828' }, // Darker Red
-    success:   { main: '#2e7d32' }, // Darker Green
+    primary: { main: '#000080' },
+    secondary: { main: '#800000' },
+    error: { main: '#c62828' },
+    success: { main: '#2e7d32' },
   },
   shape: { borderRadius: 12 },
   typography: {
@@ -40,65 +47,33 @@ const theme = createTheme({
     MuiCard: {
       defaultProps: { elevation: 0 },
       styleOverrides: {
-        root: { border: '1px solid #e0e0e0', borderRadius: 16 }
-      }
+        root: { border: '1px solid #e0e0e0', borderRadius: 16 },
+      },
     },
     MuiButton: {
       styleOverrides: {
-        root: { textTransform: 'none', borderRadius: 8, fontWeight: 600 }
-      }
-    }
-  }
+        root: { textTransform: 'none', borderRadius: 8, fontWeight: 600 },
+      },
+    },
+  },
 });
 
-// ── NavBar is inside Router so useLocation works ──────────────────────────────
-function NavBar({ user, onLogout }) {
+function NavBar({ user, onLogout, role, showRollCallReminder }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const handleDrawerToggle = () => {
-    setDrawerOpen(!drawerOpen);
-  };
-
-  const handleDrawerClose = () => {
-    setDrawerOpen(false);
-  };
-
-  // Hide the bar entirely on the login page
   if (location.pathname === '/login') return null;
-
-  // Also hide if not logged in (safety net)
   if (!user) return null;
 
-  const drawerItems = (
-    <Box sx={{ width: 250 }} role="presentation" onClick={handleDrawerClose} onKeyDown={handleDrawerClose}>
-      <Typography variant="h6" sx={{ p: 2, fontWeight: 'bold', color: 'primary.main' }}>
-        AGS - Prestige Campus
-      </Typography>
-      <List>
-        <ListItem disablePadding>
-          <ListItemButton component={Link} to="/submit-attendance">
-            <ListItemIcon><AssignmentIcon /></ListItemIcon>
-            <ListItemText primary="Submit Roll Call" />
-          </ListItemButton>
-        </ListItem>
-        <ListItem disablePadding>
-          <ListItemButton component={Link} to="/dashboard">
-            <ListItemIcon><DashboardIcon /></ListItemIcon>
-            <ListItemText primary="Dashboard" />
-          </ListItemButton>
-        </ListItem>
-        <ListItem disablePadding>
-          <ListItemButton onClick={onLogout}>
-            <ListItemIcon><LogoutIcon /></ListItemIcon>
-            <ListItemText primary="Logout" />
-          </ListItemButton>
-        </ListItem>
-      </List>
-    </Box>
-  );
+  const navValue = location.pathname === '/dashboard'
+    ? 0
+    : location.pathname === '/submit-attendance'
+      ? 1
+      : location.pathname === '/profile'
+        ? 2
+        : -1;
 
   return (
     <>
@@ -114,9 +89,14 @@ function NavBar({ user, onLogout }) {
           </Typography>
 
           {isMobile ? (
-            <IconButton color="inherit" aria-label="open drawer" edge="end" onClick={handleDrawerToggle}>
-              <MenuIcon />
-            </IconButton>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <IconButton color="inherit" aria-label="profile" onClick={() => navigate('/profile')}>
+                <AccountCircleIcon />
+              </IconButton>
+              <IconButton color="inherit" aria-label="logout" onClick={onLogout}>
+                <LogoutIcon />
+              </IconButton>
+            </Box>
           ) : (
             <Box>
               <Button color="inherit" component={Link} to="/submit-attendance">
@@ -125,6 +105,14 @@ function NavBar({ user, onLogout }) {
               <Button color="inherit" component={Link} to="/dashboard" sx={{ ml: 1 }}>
                 Dashboard
               </Button>
+              {(role === 'ICT COORDINATOR' || role === 'DIRECTOR' || role === 'ADMIN') && (
+                <Button color="inherit" component={Link} to="/pending-approvals" sx={{ ml: 1 }}>
+                  Pending Approvals
+                </Button>
+              )}
+              <Button color="inherit" component={Link} to="/profile" sx={{ ml: 1 }}>
+                Profile
+              </Button>
               <Button color="inherit" variant="outlined" onClick={onLogout} sx={{ ml: 2, borderColor: 'rgba(255,255,255,0.6)' }}>
                 Logout
               </Button>
@@ -132,25 +120,123 @@ function NavBar({ user, onLogout }) {
           )}
         </Toolbar>
       </AppBar>
-      <Drawer anchor="left" open={drawerOpen} onClose={handleDrawerClose}>
-        {drawerItems}
-      </Drawer>
+
+      {isMobile && (
+        <>
+          <Paper elevation={8} sx={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 1300, borderTop: '1px solid #e0e0e0' }}>
+            <BottomNavigation
+              showLabels
+              value={navValue}
+              onChange={(_, value) => {
+                if (value === 0) navigate('/dashboard');
+                if (value === 1) navigate('/submit-attendance');
+                if (value === 2) navigate('/profile');
+              }}
+              sx={{ height: 72 }}
+            >
+              <BottomNavigationAction label="Home" icon={<DashboardIcon />} />
+              <BottomNavigationAction label="New Roll Call" icon={<AssignmentIcon />} />
+              <BottomNavigationAction label="Profile" icon={<AccountCircleIcon />} />
+            </BottomNavigation>
+          </Paper>
+          <Fab
+            color="secondary"
+            aria-label="new roll call"
+            sx={{ position: 'fixed', bottom: 40, left: '50%', transform: 'translateX(-50%)', zIndex: 1400 }}
+            onClick={() => navigate('/submit-attendance')}
+          >
+            {showRollCallReminder ? (
+              <Badge color="error" variant="dot">
+                <AssignmentIcon />
+              </Badge>
+            ) : (
+              <AssignmentIcon />
+            )}
+          </Fab>
+        </>
+      )}
     </>
   );
 }
 
-// ── Main App ──────────────────────────────────────────────────────────────────
 function App() {
-  const [user, setUser]       = useState(null);
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [role, setRole] = useState(null);
+  const [status, setStatus] = useState('pending');
+  const [classId, setClassId] = useState('');
+  const [showRollCallReminder, setShowRollCallReminder] = useState(false);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       setLoading(false);
+
+      if (!currentUser) {
+        setRole(null);
+        setStatus('pending');
+        setClassId('');
+        setShowRollCallReminder(false);
+        return;
+      }
+
+      try {
+        const tokenResult = await currentUser.getIdTokenResult(true);
+        const claimsRole = tokenResult.claims?.role || null;
+        const claimsClassId = tokenResult.claims?.classId || null;
+
+        const userDocRef = doc(db, 'users', currentUser.uid);
+        let userDoc = await getDoc(userDocRef);
+        if (!userDoc.exists()) {
+          await setDoc(userDocRef, {
+            name: currentUser.displayName || '',
+            email: currentUser.email || '',
+            status: 'pending',
+            role: null,
+            classId: null,
+            createdAt: serverTimestamp(),
+          });
+          userDoc = await getDoc(userDocRef);
+        }
+
+        const data = userDoc.data() || {};
+        const nextRole = data.role || claimsRole || null;
+        const nextClassId = data.classId || claimsClassId || null;
+        setRole(nextRole);
+        setStatus(data.status || 'pending');
+        setClassId(nextClassId || '');
+      } catch (error) {
+        console.error('Error loading user profile:', error);
+      }
     });
-    return () => unsub();
+
+    return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!user || role !== 'CLASS TEACHER' || !classId) {
+      setShowRollCallReminder(false);
+      return;
+    }
+
+    const now = new Date();
+    const cutoff = new Date(now);
+    cutoff.setHours(9, 0, 0, 0);
+    const shouldRemind = now >= cutoff;
+
+    if (!shouldRemind) {
+      setShowRollCallReminder(false);
+      return;
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    const q = query(collection(db, 'attendance_logs'), where('date', '==', today), where('classId', '==', classId));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setShowRollCallReminder(snapshot.empty);
+    });
+
+    return () => unsubscribe();
+  }, [user, role, classId]);
 
   const handleLogout = async () => {
     try {
@@ -159,6 +245,8 @@ function App() {
       console.error('Error signing out:', err);
     }
   };
+
+  const isPending = status === 'pending' || !role;
 
   if (loading) {
     return (
@@ -175,11 +263,9 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Router>
-        {/* NavBar lives inside Router so useLocation works */}
-        <NavBar user={user} onLogout={handleLogout} />
+        <NavBar user={user} onLogout={handleLogout} role={role} showRollCallReminder={showRollCallReminder} />
 
-        {/* mt: 8 pushes content below the fixed AppBar (64px height) */}
-        <Box sx={{ mt: user ? 8 : 0, p: user ? 3 : 0 }}>
+        <Box sx={{ mt: user ? 8 : 0, p: user ? { xs: 2, md: 3 } : 0, pb: user ? { xs: 10, md: 3 } : 0 }}>
           <Suspense fallback={
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}>
               <CircularProgress />
@@ -188,19 +274,31 @@ function App() {
             <Routes>
               <Route
                 path="/login"
-                element={!user ? <Login /> : <Navigate to="/dashboard" />}
+                element={!user ? <Login /> : <Navigate to={isPending ? '/pending-approval' : '/dashboard'} />}
+              />
+              <Route
+                path="/pending-approval"
+                element={user ? (isPending ? <PendingApproval /> : <Navigate to="/dashboard" />) : <Navigate to="/login" />}
               />
               <Route
                 path="/dashboard"
-                element={user ? <Dashboard /> : <Navigate to="/login" />}
+                element={user ? (isPending ? <Navigate to="/pending-approval" /> : <Dashboard />) : <Navigate to="/login" />}
               />
               <Route
                 path="/submit-attendance"
-                element={user ? <SubmitAttendance /> : <Navigate to="/login" />}
+                element={user ? (isPending ? <Navigate to="/pending-approval" /> : <SubmitAttendance />) : <Navigate to="/login" />}
+              />
+              <Route
+                path="/profile"
+                element={user ? (isPending ? <Navigate to="/pending-approval" /> : <Profile />) : <Navigate to="/login" />}
+              />
+              <Route
+                path="/pending-approvals"
+                element={user ? (isPending || !['ICT COORDINATOR', 'DIRECTOR', 'ADMIN'].includes(role) ? <Navigate to="/dashboard" /> : <PendingApprovals />) : <Navigate to="/login" />}
               />
               <Route
                 path="*"
-                element={<Navigate to={user ? '/dashboard' : '/login'} />}
+                element={<Navigate to={user ? (isPending ? '/pending-approval' : '/dashboard') : '/login'} />}
               />
             </Routes>
           </Suspense>

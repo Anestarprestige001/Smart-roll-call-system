@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Card, CardContent, Typography, Button, Box, Alert, Avatar } from '@mui/material';
 import SchoolIcon from '@mui/icons-material/School';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { auth } from '../firebase';
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { auth, db } from '../firebase';
 
 const Login = () => {
   const [error, setError] = useState('');
@@ -10,21 +11,28 @@ const Login = () => {
   const handleGoogleSignIn = async () => {
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      const userRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userRef);
+
+      if (!userDoc.exists()) {
+        await setDoc(userRef, {
+          name: user.displayName || '',
+          email: user.email || '',
+          status: 'pending',
+          role: null,
+          classId: null,
+          createdAt: serverTimestamp(),
+        });
+      }
     } catch (err) {
       setError('Failed to sign in with Google: ' + err.message);
     }
   };
 
   return (
-    <Box sx={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      bgcolor: '#f5f7fa',
-      p: 3,
-    }}>
+    <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#f5f7fa', p: 3 }}>
       <Card sx={{ maxWidth: 420, width: '100%', p: 4, borderRadius: 2, boxShadow: 3 }}>
         <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <Avatar sx={{ bgcolor: 'primary.main', width: 64, height: 64, mb: 2 }}>
@@ -44,13 +52,7 @@ const Login = () => {
             </Alert>
           )}
 
-          <Button
-            variant="contained"
-            color="secondary"
-            size="large"
-            onClick={handleGoogleSignIn}
-            sx={{ mt: 2, width: '100%', py: 1.5, textTransform: 'none', fontWeight: 600 }}
-          >
+          <Button variant="contained" color="secondary" size="large" onClick={handleGoogleSignIn} sx={{ mt: 2, width: '100%', py: 1.5, textTransform: 'none', fontWeight: 600 }}>
             Sign in with Google
           </Button>
         </CardContent>

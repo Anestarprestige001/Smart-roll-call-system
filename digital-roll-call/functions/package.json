@@ -1,0 +1,11 @@
+{
+  "name": "digital-roll-call-functions",
+  "description": "Cloud Functions for the digital roll call app",
+  "engines": {
+    "node": "20"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.3.0",
+    "firebase-functions": "^6.0.0"
+  }
+}
