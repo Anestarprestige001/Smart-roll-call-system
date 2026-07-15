@@ -168,9 +168,17 @@ function App() {
   const [showRollCallReminder, setShowRollCallReminder] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    let unsubscribeUserDoc = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       setLoading(false);
+
+      // Clean up any listener from a previous user before proceeding
+      if (unsubscribeUserDoc) {
+        unsubscribeUserDoc();
+        unsubscribeUserDoc = null;
+      }
 
       if (!currentUser) {
         setRole(null);
@@ -181,12 +189,10 @@ function App() {
       }
 
       try {
-        const tokenResult = await currentUser.getIdTokenResult(true);
-        const claimsRole = tokenResult.claims?.role || null;
-        const claimsClassId = tokenResult.claims?.classId || null;
-
         const userDocRef = doc(db, 'users', currentUser.uid);
         let userDoc = await getDoc(userDocRef);
+
+        // Create the pending doc on first-ever sign-in only
         if (!userDoc.exists()) {
           await setDoc(userDocRef, {
             name: currentUser.displayName || '',
@@ -196,21 +202,39 @@ function App() {
             classId: null,
             createdAt: serverTimestamp(),
           });
-          userDoc = await getDoc(userDocRef);
         }
 
-        const data = userDoc.data() || {};
-        const nextRole = data.role || claimsRole || null;
-        const nextClassId = data.classId || claimsClassId || null;
-        setRole(nextRole);
-        setStatus(data.status || 'pending');
-        setClassId(nextClassId || '');
+        let hasRefreshedForActive = false;
+
+        unsubscribeUserDoc = onSnapshot(userDocRef, async (snap) => {
+          const data = snap.data() || {};
+
+          // Force a fresh ID token exactly once, the moment the user
+          // becomes active with a role, so custom claims are current
+          if (data.status === 'active' && data.role && !hasRefreshedForActive) {
+            hasRefreshedForActive = true;
+            try {
+              await currentUser.getIdTokenResult(true);
+            } catch (err) {
+              console.error('Error refreshing ID token:', err);
+            }
+          }
+
+          setRole(data.role || null);
+          setStatus(data.status || 'pending');
+          setClassId(data.classId || '');
+        }, (error) => {
+          console.error('Error listening to user doc:', error);
+        });
       } catch (error) {
         console.error('Error loading user profile:', error);
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeUserDoc) unsubscribeUserDoc();
+    };
   }, []);
 
   useEffect(() => {
