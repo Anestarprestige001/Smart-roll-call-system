@@ -28,6 +28,8 @@ export default function SubmitAttendance() {
   const [activeTerm, setActiveTerm] = useState(null);
   const [loading, setLoading] = useState(true);
   const [classes, setClasses] = useState([]);
+  const [userRole, setUserRole] = useState(null);
+  const [teacherClassName, setTeacherClassName] = useState('');
   const [selectedClassId, setSelectedClassId] = useState('');
   const [formData, setFormData] = useState(INITIAL_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -37,48 +39,74 @@ export default function SubmitAttendance() {
   const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
-    const fetchActiveTerm = async () => {
-      try {
-        const q = query(collection(db, 'terms'), where('isActive', '==', true));
-        const snapshot = await getDocs(q);
-        if (!snapshot.empty) {
-          setActiveTerm({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
-        }
-      } catch (err) {
-        console.error('Error fetching active term:', err);
-      } finally {
-        setLoading(false);
+    setLoading(true);
+    setLoadError('');
+
+    const promises = [];
+    const unsubscribes = [];
+
+    // 1. Fetch Active Term
+    const termPromise = getDocs(query(collection(db, 'terms'), where('isActive', '==', true))).then(snapshot => {
+      if (!snapshot.empty) {
+        setActiveTerm({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
       }
-    };
-
-    const unsubscribeClasses = onSnapshot(getClassesCollectionRef(db), (snap) => {
-      setClasses(normalizeClassOptions(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
-      setLoadError('');
-    }, (error) => {
-      console.error('Permission denied loading classes:', error);
-      setLoadError('Unable to load class data right now.');
-      setLoading(false);
+    }).catch(err => {
+      console.error('Error fetching active term:', err);
+      setLoadError(prev => prev + ' Failed to fetch active term.');
     });
+    promises.push(termPromise);
 
-    const unsubscribeTeacher = auth.currentUser
-      ? onSnapshot(doc(db, 'users', auth.currentUser.uid), (snap) => {
+    // 2. Subscribe to Classes
+    const classesPromise = new Promise((resolve, reject) => {
+      const unsubscribe = onSnapshot(getClassesCollectionRef(db), (snap) => {
+        setClasses(normalizeClassOptions(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+        resolve();
+      }, (error) => {
+        console.error('Permission denied loading classes:', error);
+        setLoadError(prev => prev + ' Unable to load class data.');
+        reject(error);
+      });
+      unsubscribes.push(unsubscribe);
+    });
+    promises.push(classesPromise);
+
+    // 3. Subscribe to User Profile
+    if (auth.currentUser) {
+      const userPromise = new Promise((resolve, reject) => {
+        const unsubscribe = onSnapshot(doc(db, 'users', auth.currentUser.uid), (snap) => {
           const data = snap.data() || {};
+          setUserRole(data.role || null);
           if (data.role === 'CLASS TEACHER' && data.classId) {
             setSelectedClassId(data.classId);
           }
+          resolve();
         }, (error) => {
           console.error('Error loading teacher profile:', error);
-          setLoadError('Unable to load your account profile right now.');
-          setLoading(false);
-        })
-      : null;
+          setLoadError(prev => prev + ' Unable to load your profile.');
+          reject(error);
+        });
+        unsubscribes.push(unsubscribe);
+      });
+      promises.push(userPromise);
+    }
 
-    fetchActiveTerm();
+    Promise.allSettled(promises).finally(() => {
+      setLoading(false);
+    });
+
     return () => {
-      unsubscribeClasses();
-      if (unsubscribeTeacher) unsubscribeTeacher();
+      unsubscribes.forEach(unsub => unsub());
     };
   }, [retryToken]);
+
+  const isClassTeacher = userRole === 'CLASS TEACHER';
+
+  useEffect(() => {
+    if (isClassTeacher && selectedClassId && classes.length > 0) {
+      const className = classes.find(c => c.id === selectedClassId)?.name || '';
+      setTeacherClassName(className);
+    }
+  }, [isClassTeacher, selectedClassId, classes]);
 
   const handleChange = (key) => (e) => {
     const raw = e.target.value;
@@ -130,9 +158,9 @@ export default function SubmitAttendance() {
       className: selectedClass?.name || selectedClassId,
       house: selectedClass?.house || 'Unknown',
       level: selectedClass?.level || 'Unknown',
-      submittedBy: auth.currentUser?.displayName || 'Unknown',
-      submittedByEmail: auth.currentUser?.email || 'Unknown',
-      submittedByUid: auth.currentUser?.uid || null,
+      submittedBy: auth.currentUser?.displayName ?? 'Unknown',
+      submittedByEmail: auth.currentUser?.email ?? 'Unknown',
+      submittedByUid: auth.currentUser?.uid ?? null,
       timestamp: serverTimestamp(),
       date: today,
       termId: activeTerm.id,
@@ -198,14 +226,21 @@ export default function SubmitAttendance() {
       <Card elevation={4} sx={{ borderRadius: 3 }}>
         <CardContent sx={{ p: { xs: 1.5, md: 3 } }}>
           <Box component="form" onSubmit={handleSubmit} noValidate>
-            <FormControl fullWidth sx={{ mb: 4 }}>
-              <InputLabel id="class-label">Select Class</InputLabel>
-              <Select labelId="class-label" value={selectedClassId} label="Select Class" onChange={(event) => setSelectedClassId(event.target.value)}>
-                {classes.map((classItem) => (
-                  <MenuItem key={classItem.id} value={classItem.id}>{classItem.name}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            {isClassTeacher ? (
+              <Box sx={{ mb: 4, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                <Typography variant="h6">Class</Typography>
+                <Typography color="text.secondary">{teacherClassName || (selectedClassId ? 'Loading class name...' : 'No class assigned')}</Typography>
+              </Box>
+            ) : (
+              <FormControl fullWidth sx={{ mb: 4 }}>
+                <InputLabel id="class-label">Select Class</InputLabel>
+                <Select labelId="class-label" value={selectedClassId} label="Select Class" onChange={(event) => setSelectedClassId(event.target.value)}>
+                  {classes.map((classItem) => (
+                    <MenuItem key={classItem.id} value={classItem.id}>{classItem.name}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
 
             {selectedClass && (
               <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>

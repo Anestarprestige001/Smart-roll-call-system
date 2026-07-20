@@ -1,34 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Box, Card, CardContent, Typography, Button, TextField, Chip,
-  Stack, Dialog, DialogTitle, DialogContent, DialogActions,
-  Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  Paper, TablePagination, useMediaQuery, useTheme, CircularProgress, Divider,
-  Alert, Avatar
+  Box, Card, CardContent, Typography, Button, Chip,
+  Stack, Dialog, DialogTitle, DialogContent, DialogActions, TextField,
+  CircularProgress, Alert, Grid
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
-import AssignmentIcon from '@mui/icons-material/Assignment';
-import PeopleIcon from '@mui/icons-material/People';
-import PersonOffIcon from '@mui/icons-material/PersonOff';
-import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
-import BarChartIcon from '@mui/icons-material/BarChart';
 import {
-  collection, query, orderBy, onSnapshot, where,
+  collection, query, orderBy, onSnapshot,
   addDoc, serverTimestamp, writeBatch, doc
 } from 'firebase/firestore';
-import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { onIdTokenChanged } from 'firebase/auth';
 import { auth, db } from '../firebase';
+import { getClassesCollectionRef, normalizeClassOptions } from '../constants/classes';
+import ClassAttendanceStats from '../components/ClassAttendanceStats';
+import SchoolWideAttendanceStats from '../components/SchoolWideAttendanceStats';
 
 const EMPTY_TERM = { name: '', startDate: '', endDate: '' };
 
 export default function Dashboard() {
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const navigate = useNavigate();
-
   const [terms, setTerms] = useState([]);
-  const [attendanceLogs, setAttendanceLogs] = useState([]);
+  const [classes, setClasses] = useState([]);
+  const [selectedClassId, setSelectedClassId] = useState(null);
+
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState(null);
   const [teacherClassId, setTeacherClassId] = useState('');
@@ -36,10 +29,6 @@ export default function Dashboard() {
 
   const [filterDate, setFilterDate] = useState('');
   const [filterClass, setFilterClass] = useState('');
-  const [filterHouse, setFilterHouse] = useState('');
-
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
 
   const [openAddTerm, setOpenAddTerm] = useState(false);
   const [newTerm, setNewTerm] = useState(EMPTY_TERM);
@@ -48,17 +37,43 @@ export default function Dashboard() {
   const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
+    setLoading(true);
     const qTerms = query(collection(db, 'terms'), orderBy('createdAt', 'desc'));
     const unsubTerms = onSnapshot(qTerms, (snap) => {
       setTerms(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       setDataError('');
+      setLoading(false);
     }, (error) => {
       console.error('Error loading terms:', error);
       setDataError('Unable to load dashboard data right now.');
       setLoading(false);
     });
 
+    const unsubClasses = onSnapshot(getClassesCollectionRef(db), (snap) => {
+      setClasses(normalizeClassOptions(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+    }, (error) => {
+      console.error('Error loading classes:', error);
+      setDataError('Unable to load dashboard data right now.');
+      setLoading(false);
+    });
+
     if (auth.currentUser) {
+      // Force a token refresh to get the latest custom claims.
+      auth.currentUser.getIdToken(true).then(() => {
+        auth.currentUser.getIdTokenResult().then(idTokenResult => {
+          // Diagnostic log to confirm claims.
+          console.log('User claims:', idTokenResult.claims);
+        });
+      });
+
+      // Also listen for token changes while the app is open.
+      const unsubscribeIdToken = onIdTokenChanged(auth, async (user) => {
+        if (user) {
+          console.log('ID token changed, refreshing claims...');
+          await user.getIdToken(true);
+        }
+      });
+
       const unsubscribeUser = onSnapshot(doc(db, 'users', auth.currentUser.uid), (snap) => {
         const data = snap.data() || {};
         const nextRole = data.role || null;
@@ -74,75 +89,21 @@ export default function Dashboard() {
 
       return () => {
         unsubTerms();
+        unsubClasses();
+        unsubscribeIdToken();
         unsubscribeUser();
       };
     }
 
-    return () => { unsubTerms(); };
+    return () => {
+      unsubTerms();
+      unsubClasses();
+    };
   }, [retryToken]);
 
-  useEffect(() => {
-    if (!auth.currentUser) {
-      setLoading(false);
-      return;
-    }
-
-    const qLogs = role === 'CLASS TEACHER' && teacherClassId
-      ? query(collection(db, 'attendance_logs'), where('classId', '==', teacherClassId), orderBy('date', 'desc'))
-      : query(collection(db, 'attendance_logs'), orderBy('date', 'desc'));
-
-    const unsubLogs = onSnapshot(qLogs, (snap) => {
-      setAttendanceLogs(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      setLoading(false);
-      setDataError('');
-    }, (error) => {
-      console.error('Permission denied loading attendance logs:', error);
-      setLoading(false);
-      setDataError('The dashboard could not load attendance data yet. Please wait a moment and try again.');
-    });
-
-    return () => { unsubLogs(); };
-  }, [role, teacherClassId, retryToken]);
-
   const activeTerm = terms.find((t) => t.isActive);
-  const todayStr = new Date().toISOString().split('T')[0];
-  const termLogs = attendanceLogs.filter((l) => activeTerm && l.termId === activeTerm.id);
-  const todayLogs = termLogs.filter((l) => l.date === todayStr);
-
   const canManageTerms = ['DIRECTOR', 'ADMIN', 'ICT COORDINATOR'].includes(role);
   const isTeacher = role === 'CLASS TEACHER';
-  const reminderActive = new Date() >= new Date(new Date().setHours(9, 0, 0, 0));
-
-  const summaryStats = [
-    {
-      title: 'Today Present',
-      value: todayLogs.reduce((s, l) => s + (l.totalPresent || 0), 0),
-      color: theme.palette.success.main,
-      Icon: PeopleIcon,
-      subtitle: 'On campus today',
-    },
-    {
-      title: 'Today Absent',
-      value: todayLogs.reduce((s, l) => s + (l.totalAbsent || 0), 0),
-      color: theme.palette.error.main,
-      Icon: PersonOffIcon,
-      subtitle: 'Away today',
-    },
-    {
-      title: 'Classes Reported Today',
-      value: todayLogs.length,
-      color: theme.palette.primary.main,
-      Icon: AssignmentTurnedInIcon,
-      subtitle: 'of expected classes',
-    },
-    {
-      title: 'Term Total Records',
-      value: termLogs.length,
-      color: theme.palette.secondary.main,
-      Icon: BarChartIcon,
-      subtitle: activeTerm?.name || 'No active term',
-    },
-  ];
 
   const validateTerm = () => {
     const e = {};
@@ -175,41 +136,6 @@ export default function Dashboard() {
     await batch.commit();
   };
 
-  const filteredLogs = attendanceLogs.filter((log) => {
-    if (activeTerm && log.termId !== activeTerm.id) return false;
-    if (filterDate && log.date !== filterDate) return false;
-    if (filterClass && !String(log.classId || '').toLowerCase().includes(filterClass.toLowerCase())) return false;
-    if (filterHouse && !String(log.house || '').toLowerCase().includes(filterHouse.toLowerCase())) return false;
-    return true;
-  });
-
-  const teacherLogs = attendanceLogs.filter((log) => {
-    const classMatches = String(log.classId || '') === teacherClassId || String(log.classId || '') === teacherClassName;
-    return classMatches && (!activeTerm || log.termId === activeTerm.id);
-  });
-
-  const teacherTodayLog = teacherLogs.find((log) => log.date === todayStr);
-  const teacherSummary = teacherLogs.reduce((acc, log) => {
-    acc.totP += log.totalPresent || 0;
-    acc.totA += log.totalAbsent || 0;
-    return acc;
-  }, { totP: 0, totA: 0 });
-
-  const summary = filteredLogs.reduce((acc, log) => {
-    acc.gbP += log.girlsBoardersPresent || 0;
-    acc.gdP += log.girlsDayScholarsPresent || 0;
-    acc.bbP += log.boysBoardersPresent || 0;
-    acc.bdP += log.boysDayScholarsPresent || 0;
-    acc.gbA += log.girlsBoardersAbsent || 0;
-    acc.gdA += log.girlsDayScholarsAbsent || 0;
-    acc.bbA += log.boysBoardersAbsent || 0;
-    acc.bdA += log.boysDayScholarsAbsent || 0;
-    acc.totP += log.totalPresent || 0;
-    acc.totA += log.totalAbsent || 0;
-    acc.totS += log.totalStudents || 0;
-    return acc;
-  }, { gbP: 0, gdP: 0, bbP: 0, bdP: 0, gbA: 0, gdA: 0, bbA: 0, bdA: 0, totP: 0, totA: 0, totS: 0 });
-
   if (loading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
@@ -234,40 +160,7 @@ export default function Dashboard() {
         </Alert>
       )}
 
-      <Box sx={{
-        display: 'grid',
-        gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' },
-        gap: { xs: 1.5, md: 2 },
-        mb: 4,
-      }}>
-        {summaryStats.map((stat, index) => (
-          <motion.div
-            key={stat.title}
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: index * 0.1 }}
-          >
-            <Card elevation={2} sx={{ borderRadius: 3, p: { xs: 1.5, md: 2 }, borderLeft: `4px solid ${stat.color}`, height: '100%' }}>
-              <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                <Box>
-                  <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.5, lineHeight: 1.2 }}>
-                    {stat.title}
-                  </Typography>
-                  <Typography variant="h4" fontWeight="bold" color={stat.color} sx={{ lineHeight: 1.1, mt: 0.5 }}>
-                    {stat.value}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {stat.subtitle}
-                  </Typography>
-                </Box>
-                <Avatar sx={{ bgcolor: stat.color + '18', width: { xs: 40, md: 48 }, height: { xs: 40, md: 48 } }}>
-                  <stat.Icon sx={{ color: stat.color, fontSize: { xs: 20, md: 24 } }} />
-                </Avatar>
-              </Stack>
-            </Card>
-          </motion.div>
-        ))}
-      </Box>
+      {!isTeacher && <SchoolWideAttendanceStats activeTerm={activeTerm} totalClasses={classes.length} />}
 
       {canManageTerms && (
         <Box sx={{ mb: 4 }}>
@@ -309,178 +202,35 @@ export default function Dashboard() {
       )}
 
       {isTeacher ? (
-        <Box>
-          <Alert severity={teacherTodayLog ? 'success' : 'warning'} sx={{ mb: 3 }}>
-            {teacherTodayLog
-              ? `${teacherClassName || teacherClassId} has submitted today's roll call.`
-              : reminderActive
-                ? `${teacherClassName || teacherClassId} is still waiting for today's roll call after the 9:00 AM cutoff.`
-                : `${teacherClassName || teacherClassId} will be reminded after the 9:00 AM cutoff if today's roll call is still missing.`}
-          </Alert>
-          <Card sx={{ mb: 3 }}>
-            <CardContent>
-              <Typography variant="h6" fontWeight="bold" gutterBottom>
-                Your class overview
-              </Typography>
-              <Typography color="text.secondary" gutterBottom>
-                Class: {teacherClassName || teacherClassId || 'Pending assignment'}
-              </Typography>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mt: 2 }}>
-                <Chip label={`Present today: ${teacherSummary.totP}`} color="success" />
-                <Chip label={`Absent today: ${teacherSummary.totA}`} color="error" />
-              </Stack>
-              {!teacherTodayLog && (
-                <Button variant="contained" sx={{ mt: 2 }} onClick={() => navigate('/submit-attendance')}>
-                  Submit today's roll call
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" fontWeight="bold" gutterBottom>
-                Your class records
-              </Typography>
-              {teacherLogs.length === 0 ? (
-                <Typography color="text.secondary">No records for this class yet.</Typography>
-              ) : (
-                <Stack spacing={1}>
-                  {teacherLogs.slice(0, 5).map((log) => (
-                    <Box key={log.id} sx={{ border: '1px solid #e0e0e0', borderRadius: 2, p: 1.5 }}>
-                      <Typography variant="subtitle2">{log.date}</Typography>
-                      <Typography variant="body2" color="text.secondary">Present: {log.totalPresent} • Absent: {log.totalAbsent}</Typography>
-                    </Box>
-                  ))}
-                </Stack>
-              )}
-            </CardContent>
-          </Card>
-        </Box>
+        <ClassAttendanceStats classId={teacherClassId} className={teacherClassName} activeTerm={activeTerm} />
       ) : (
-        <>
-          <Card sx={{ mb: 4 }}>
-            <CardContent>
-              <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                Records Browser
-                {activeTerm ? ` — ${activeTerm.name} (${activeTerm.startDate} to ${activeTerm.endDate})` : ' — No active term'}
-              </Typography>
+        <Box>
+          <Typography variant="h6" fontWeight="bold" sx={{ mb: 2 }}>View Class Stats</Typography>
+          <Grid container spacing={2}>
+            {classes.map(c => (
+              <Grid item key={c.id} xs={12} sm={6} md={4}>
+                <Button
+                  fullWidth
+                  variant={selectedClassId === c.id ? 'contained' : 'outlined'}
+                  onClick={() => setSelectedClassId(c.id)}
+                  sx={{ justifyContent: 'flex-start', p: 2 }}
+                >
+                  {c.name}
+                </Button>
+              </Grid>
+            ))}
+          </Grid>
 
-              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: '1fr 1fr 1fr auto' }, gap: 2, alignItems: 'start', mt: 1 }}>
-                <TextField fullWidth type="date" label="Jump to Date" value={filterDate} onChange={(e) => { setFilterDate(e.target.value); setPage(0); }} slotProps={{ inputLabel: { shrink: true } }} />
-                <TextField fullWidth label="Filter by Class" placeholder="e.g. Grade 7" value={filterClass} onChange={(e) => { setFilterClass(e.target.value); setPage(0); }} />
-                <TextField fullWidth label="Filter by House" placeholder="e.g. Venus" value={filterHouse} onChange={(e) => { setFilterHouse(e.target.value); setPage(0); }} />
-                {(filterDate || filterClass || filterHouse) && (
-                  <Button variant="text" onClick={() => { setFilterDate(''); setFilterClass(''); setFilterHouse(''); setPage(0); }} sx={{ height: '56px' }}>
-                    Clear Filters
-                  </Button>
-                )}
-              </Box>
-            </CardContent>
-          </Card>
-
-          {filteredLogs.length === 0 ? (
-            <Box sx={{ textAlign: 'center', py: 8 }}>
-              <AssignmentIcon sx={{ fontSize: 72, color: 'text.disabled', mb: 2 }} />
-              <Typography variant="h6" color="text.secondary">
-                No attendance records found for the current filters.
-              </Typography>
-            </Box>
-          ) : (
-            <>
-              {isMobile ? (
-                <Stack spacing={1.5}>
-                  {filteredLogs.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((log) => (
-                    <Card key={log.id}>
-                      <CardContent>
-                        <Typography variant="subtitle2" color="primary.main" fontWeight="bold">
-                          {log.date} — {log.classId}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" gutterBottom>
-                          House: {log.house} &nbsp;|&nbsp; By: {log.submittedBy}
-                        </Typography>
-                        <Divider sx={{ my: 1 }} />
-                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, my: 1 }}>
-                          {[
-                            ['Girls Boarders', log.girlsBoardersPresent, log.girlsBoardersAbsent],
-                            ['Girls Day', log.girlsDayScholarsPresent, log.girlsDayScholarsAbsent],
-                            ['Boys Boarders', log.boysBoardersPresent, log.boysBoardersAbsent],
-                            ['Boys Day', log.boysDayScholarsPresent, log.boysDayScholarsAbsent],
-                          ].map(([label, present, absent]) => (
-                            <Box key={label} sx={{ bgcolor: 'background.default', borderRadius: 1.5, p: 1 }}>
-                              <Typography variant="caption" color="text.secondary" display="block">{label}</Typography>
-                              <Typography variant="body2" fontWeight="bold">
-                                <Box component="span" sx={{ color: 'success.main' }}>{present}</Box>
-                                {' / '}
-                                <Box component="span" sx={{ color: 'error.main' }}>{absent}</Box>
-                              </Typography>
-                            </Box>
-                          ))}
-                        </Box>
-                        <Divider sx={{ my: 1 }} />
-                        <Typography variant="body2" fontWeight="bold">
-                          Present: {log.totalPresent} &nbsp;|&nbsp; Absent: {log.totalAbsent} &nbsp;|&nbsp; Total: {log.totalStudents}
-                        </Typography>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </Stack>
-              ) : (
-                <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow sx={{ bgcolor: 'primary.main' }}>
-                        {['Date', 'Class', 'House', 'Submitted By', 'GB (P/A)', 'GD (P/A)', 'BB (P/A)', 'BD (P/A)', 'Total P', 'Total A', 'Total'].map((h) => (
-                          <TableCell key={h} sx={{ color: 'white', fontWeight: 'bold' }} align={h.includes('/') || h.startsWith('Total') ? 'center' : 'left'}>
-                            {h}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {filteredLogs.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((log) => (
-                        <TableRow key={log.id} hover>
-                          <TableCell>{log.date}</TableCell>
-                          <TableCell>{log.classId}</TableCell>
-                          <TableCell>{log.house}</TableCell>
-                          <TableCell>{log.submittedBy}</TableCell>
-                          <TableCell align="center">{log.girlsBoardersPresent} / {log.girlsBoardersAbsent}</TableCell>
-                          <TableCell align="center">{log.girlsDayScholarsPresent} / {log.girlsDayScholarsAbsent}</TableCell>
-                          <TableCell align="center">{log.boysBoardersPresent} / {log.boysBoardersAbsent}</TableCell>
-                          <TableCell align="center">{log.boysDayScholarsPresent} / {log.boysDayScholarsAbsent}</TableCell>
-                          <TableCell align="center" sx={{ color: 'success.main', fontWeight: 'bold' }}>{log.totalPresent}</TableCell>
-                          <TableCell align="center" sx={{ color: 'error.main', fontWeight: 'bold' }}>{log.totalAbsent}</TableCell>
-                          <TableCell align="center" sx={{ fontWeight: 'bold' }}>{log.totalStudents}</TableCell>
-                        </TableRow>
-                      ))}
-                      <TableRow sx={{ bgcolor: 'action.hover' }}>
-                        <TableCell colSpan={4} align="right">
-                          <Typography variant="body2" fontWeight="bold">Filtered Totals:</Typography>
-                        </TableCell>
-                        <TableCell align="center"><strong>{summary.gbP} / {summary.gbA}</strong></TableCell>
-                        <TableCell align="center"><strong>{summary.gdP} / {summary.gdA}</strong></TableCell>
-                        <TableCell align="center"><strong>{summary.bbP} / {summary.bbA}</strong></TableCell>
-                        <TableCell align="center"><strong>{summary.bdP} / {summary.bdA}</strong></TableCell>
-                        <TableCell align="center" sx={{ color: 'success.main' }}><strong>{summary.totP}</strong></TableCell>
-                        <TableCell align="center" sx={{ color: 'error.main' }}><strong>{summary.totA}</strong></TableCell>
-                        <TableCell align="center"><strong>{summary.totS}</strong></TableCell>
-                      </TableRow>
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              )}
-
-              <TablePagination
-                component="div"
-                count={filteredLogs.length}
-                page={page}
-                onPageChange={(_, newPage) => setPage(newPage)}
-                rowsPerPage={rowsPerPage}
-                onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
-                rowsPerPageOptions={[10, 25, 50]}
+          {selectedClassId && (
+            <Box sx={{ mt: 4 }}>
+              <ClassAttendanceStats
+                classId={selectedClassId}
+                className={classes.find(c => c.id === selectedClassId)?.name}
+                activeTerm={activeTerm}
               />
-            </>
+            </Box>
           )}
-        </>
+        </Box>
       )}
 
       <Dialog open={openAddTerm} onClose={() => { setOpenAddTerm(false); setTermErrors({}); }} maxWidth="xs" fullWidth>
