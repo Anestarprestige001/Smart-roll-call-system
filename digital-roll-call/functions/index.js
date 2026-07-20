@@ -28,33 +28,42 @@ exports.assignUserRole = functions.https.onCall(async (data, context) => {
   const roleHierarchy = {
     DIRECTOR: ['ADMIN', 'CLASS TEACHER', 'SCHOOL MANAGER'],
     'ICT COORDINATOR': ['CLASS TEACHER'],
+    ADMIN: ['CLASS TEACHER'],
   };
 
   if (!callerRole || !roleHierarchy[callerRole]) {
-    throw new functions.https.HttpsError('permission-denied', 'Only ICT Coordinators or Directors may assign roles.');
+    throw new functions.https.HttpsError('permission-denied', 'Only ICT Coordinators, Directors, or Admins may assign roles.');
   }
 
   const { uid, role, classId } = data;
+  const isRemoval = role === null || role === undefined;
   const allowedRoles = ['ADMIN', 'CLASS TEACHER', 'SCHOOL MANAGER'];
 
-  if (!uid || !allowedRoles.includes(role)) {
+  if (!uid || (!isRemoval && !allowedRoles.includes(role))) {
     throw new functions.https.HttpsError('invalid-argument', 'Invalid role assignment payload.');
   }
 
-  if (!roleHierarchy[callerRole].includes(role)) {
+  if (!isRemoval && !roleHierarchy[callerRole].includes(role)) {
     throw new functions.https.HttpsError('permission-denied', 'You lack clearance for this role.');
   }
 
-  const customClaims = { role };
-  if (role === 'CLASS TEACHER' && classId) {
-    customClaims.classId = classId;
+  if (!isRemoval && role === 'CLASS TEACHER' && !classId) {
+    throw new functions.https.HttpsError('invalid-argument', 'A class is required for CLASS TEACHER assignments.');
+  }
+
+  const customClaims = {};
+  if (!isRemoval) {
+    customClaims.role = role;
+    if (role === 'CLASS TEACHER') {
+      customClaims.classId = classId || null;
+    }
   }
 
   await admin.auth().setCustomUserClaims(uid, customClaims);
   await admin.firestore().collection('users').doc(uid).set({
-    role,
-    classId: role === 'CLASS TEACHER' ? classId || null : null,
-    status: 'active',
+    role: isRemoval ? null : role,
+    classId: isRemoval || role !== 'CLASS TEACHER' ? null : classId || null,
+    status: isRemoval ? 'pending' : 'active',
     claimsUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true });

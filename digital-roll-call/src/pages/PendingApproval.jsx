@@ -42,6 +42,7 @@ function PendingApproval() {
           <Typography variant="h6" gutterBottom>Initial Account Bootstrap</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             This action is intended for a trusted bootstrap flow that should be run from a secure admin environment.
+            With this Spark plan, this callable endpoint is not available. For the one-time first bootstrap, set the first ICT Coordinator role directly in their /users/{uid} Firestore document in the Firebase console, or run a local Admin SDK script instead.
           </Typography>
           <Button
             variant="contained"

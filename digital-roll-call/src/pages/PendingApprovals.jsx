@@ -3,10 +3,10 @@ import {
   Box, Card, CardContent, Typography, Stack, Alert, FormControl, InputLabel, Select, MenuItem,
   Button, CircularProgress, Chip
 } from '@mui/material';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
-import { db, functions } from '../firebase';
+import { collection, doc, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
+import { db } from '../firebase';
 import { getAssignableRoles } from '../rolePermissions';
+import { getClassesCollectionRef, normalizeClassOptions } from '../constants/classes';
 
 const ROLE_OPTIONS = ['ADMIN', 'CLASS TEACHER', 'SCHOOL MANAGER'];
 
@@ -17,6 +17,7 @@ export default function PendingApprovals() {
   const [selectedClasses, setSelectedClasses] = useState({});
   const [classes, setClasses] = useState([]);
   const [approvingId, setApprovingId] = useState(null);
+  const [approvalError, setApprovalError] = useState('');
 
   useEffect(() => {
     const q = query(collection(db, 'users'), where('status', '==', 'pending'));
@@ -25,8 +26,8 @@ export default function PendingApprovals() {
       setLoading(false);
     });
 
-    const unsubscribeClasses = onSnapshot(collection(db, 'classes'), (snap) => {
-      setClasses(snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+    const unsubscribeClasses = onSnapshot(getClassesCollectionRef(db), (snap) => {
+      setClasses(normalizeClassOptions(snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))));
     });
 
     return () => {
@@ -37,6 +38,9 @@ export default function PendingApprovals() {
 
   const handleRoleChange = (userId, role) => {
     setSelectedRoles((prev) => ({ ...prev, [userId]: role }));
+    if (role !== 'CLASS TEACHER') {
+      setSelectedClasses((prev) => ({ ...prev, [userId]: '' }));
+    }
   };
 
   const handleClassChange = (userId, classId) => {
@@ -57,9 +61,19 @@ export default function PendingApprovals() {
     }
 
     setApprovingId(user.id);
+    setApprovalError('');
     try {
-      const assignUserRole = httpsCallable(functions, 'assignUserRole');
-      await assignUserRole({ uid: user.id, role, classId });
+      await updateDoc(doc(db, 'users', user.id), {
+        role,
+        classId: role === 'CLASS TEACHER' ? (classId || null) : null,
+        status: 'active',
+      });
+    } catch (error) {
+      console.error('Approve error:', error);
+      const friendlyMessage = error?.code === 'permission-denied'
+        ? 'You lack clearance for this role.'
+        : error?.message || 'Unable to approve this user right now.';
+      setApprovalError(friendlyMessage);
     } finally {
       setApprovingId(null);
     }
@@ -78,6 +92,9 @@ export default function PendingApprovals() {
       <Typography variant="h4" color="primary.main" fontWeight="bold" gutterBottom>
         Pending approvals
       </Typography>
+      {approvalError && (
+        <Alert severity="error" sx={{ mb: 2 }}>{approvalError}</Alert>
+      )}
       {users.length === 0 ? (
         <Alert severity="info">No pending users right now.</Alert>
       ) : (
@@ -85,7 +102,7 @@ export default function PendingApprovals() {
           {users.map((user) => (
             <Card key={user.id}>
               <CardContent>
-                <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'center' } }}>
                   <Box>
                     <Typography variant="h6">{user.name || user.email}</Typography>
                     <Typography color="text.secondary">{user.email}</Typography>
@@ -104,20 +121,21 @@ export default function PendingApprovals() {
                         ))}
                       </Select>
                     </FormControl>
-                    <FormControl size="small" sx={{ minWidth: 200 }}>
-                      <InputLabel>Class</InputLabel>
-                      <Select
-                        value={selectedClasses[user.id] || ''}
-                        label="Class"
-                        onChange={(event) => handleClassChange(user.id, event.target.value)}
-                        disabled={(selectedRoles[user.id] || '') !== 'CLASS TEACHER'}
-                      >
-                        <MenuItem value="">None</MenuItem>
-                        {classes.map((classItem) => (
-                          <MenuItem key={classItem.id} value={classItem.id}>{classItem.name}</MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
+                    {(selectedRoles[user.id] || '') === 'CLASS TEACHER' && (
+                      <FormControl size="small" sx={{ minWidth: 200 }}>
+                        <InputLabel>Class</InputLabel>
+                        <Select
+                          value={selectedClasses[user.id] || ''}
+                          label="Class"
+                          onChange={(event) => handleClassChange(user.id, event.target.value)}
+                        >
+                          <MenuItem value="">Select class</MenuItem>
+                          {classes.map((classItem) => (
+                            <MenuItem key={classItem.id} value={classItem.id}>{classItem.name}</MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    )}
                     <Button variant="contained" onClick={() => handleApprove(user)} disabled={approvingId === user.id}>
                       {approvingId === user.id ? <CircularProgress size={20} /> : 'Approve'}
                     </Button>

@@ -248,7 +248,7 @@ export default function Dashboard() {
             transition={{ duration: 0.4, delay: index * 0.1 }}
           >
             <Card elevation={2} sx={{ borderRadius: 3, p: { xs: 1.5, md: 2 }, borderLeft: `4px solid ${stat.color}`, height: '100%' }}>
-              <Stack direction="row" justifyContent="space-between" alignItems="center">
+              <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
                 <Box>
                   <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.5, lineHeight: 1.2 }}>
                     {stat.title}
@@ -271,7 +271,7 @@ export default function Dashboard() {
 
       {canManageTerms && (
         <Box sx={{ mb: 4 }}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+          <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
             <Typography variant="h6" fontWeight="bold">Term Management</Typography>
             <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setOpenAddTerm(true)}>
               Add Term
@@ -281,11 +281,11 @@ export default function Dashboard() {
           {terms.length === 0 ? (
             <Alert severity="warning">No terms created yet. Add a term to start recording attendance.</Alert>
           ) : (
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ overflowX: 'auto', pb: 1 }} flexWrap="wrap" useFlexGap>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ overflowX: 'auto', pb: 1, flexWrap: 'wrap' }} useFlexGap>
               {terms.map((term) => (
                 <Card key={term.id} sx={{ minWidth: 260, flex: '1 1 260px', borderColor: term.isActive ? 'primary.main' : 'divider', borderWidth: term.isActive ? 2 : 1, borderRadius: 2 }}>
                   <CardContent>
-                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 1 }}>
+                    <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
                       <Typography variant="h6" color={term.isActive ? 'primary.main' : 'text.primary'} fontWeight="bold">
                         {term.name}
                       </Typography>

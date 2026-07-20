@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import {
   Box, Card, CardContent, Typography, Button, TextField,
   Select, InputLabel, FormControl, Alert,
-  Snackbar, CircularProgress, Divider, Stack
+  Snackbar, CircularProgress, Divider, Stack, MenuItem
 } from '@mui/material';
 import {
   collection, query, where, getDocs, addDoc, serverTimestamp, onSnapshot, doc
 } from 'firebase/firestore';
 import { motion } from 'framer-motion';
 import { db, auth } from '../firebase';
+import { normalizeClassOptions, getClassesCollectionRef } from '../constants/classes';
 
 const FIELDS = [
   { key: 'girlsBoardersPresent', label: 'Girls Boarders Present', isAbsent: false },
@@ -50,8 +51,8 @@ export default function SubmitAttendance() {
       }
     };
 
-    const unsubscribeClasses = onSnapshot(collection(db, 'classes'), (snap) => {
-      setClasses(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    const unsubscribeClasses = onSnapshot(getClassesCollectionRef(db), (snap) => {
+      setClasses(normalizeClassOptions(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
       setLoadError('');
     }, (error) => {
       console.error('Permission denied loading classes:', error);
@@ -237,7 +238,7 @@ export default function SubmitAttendance() {
                     <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                       Live Summary
                     </Typography>
-                    <Stack direction="row" justifyContent="space-around" alignItems="center" sx={{ textAlign: 'center', py: 1 }}>
+                    <Stack direction="row" sx={{ justifyContent: 'space-around', alignItems: 'center', textAlign: 'center', py: 1 }}>
                       <Box>
                         <Typography variant="overline" color="text.secondary">Total Present</Typography>
                         <Typography sx={{ fontSize: { xs: '1.5rem', md: '2rem' }, fontWeight: 'bold', color: 'success.main' }}>{totalPresent}</Typography>

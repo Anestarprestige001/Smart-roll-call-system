@@ -27,6 +27,7 @@ const SubmitAttendance = React.lazy(() => import('./pages/SubmitAttendance'));
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
 const PendingApproval = React.lazy(() => import('./pages/PendingApproval'));
 const PendingApprovals = React.lazy(() => import('./pages/PendingApprovals'));
+const ApprovedTeachers = React.lazy(() => import('./pages/ApprovedTeachers'));
 const Profile = React.lazy(() => import('./pages/Profile'));
 
 const theme = createTheme({
@@ -106,9 +107,14 @@ function NavBar({ user, onLogout, role, showRollCallReminder }) {
                 Dashboard
               </Button>
               {(role === 'ICT COORDINATOR' || role === 'DIRECTOR' || role === 'ADMIN') && (
-                <Button color="inherit" component={Link} to="/pending-approvals" sx={{ ml: 1 }}>
-                  Pending Approvals
-                </Button>
+                <>
+                  <Button color="inherit" component={Link} to="/pending-approvals" sx={{ ml: 1 }}>
+                    Pending Approvals
+                  </Button>
+                  <Button color="inherit" component={Link} to="/approved-teachers" sx={{ ml: 1 }}>
+                    Approved Teachers
+                  </Button>
+                </>
               )}
               <Button color="inherit" component={Link} to="/profile" sx={{ ml: 1 }}>
                 Profile
@@ -391,6 +397,10 @@ function App() {
               <Route
                 path="/pending-approvals"
                 element={user ? (isPending || !['ICT COORDINATOR', 'DIRECTOR', 'ADMIN'].includes(role) ? <Navigate to="/dashboard" /> : <PendingApprovals />) : <Navigate to="/login" />}
+              />
+              <Route
+                path="/approved-teachers"
+                element={user ? (isPending || !['ICT COORDINATOR', 'DIRECTOR', 'ADMIN'].includes(role) ? <Navigate to="/dashboard" /> : <ApprovedTeachers />) : <Navigate to="/login" />}
               />
               <Route
                 path="*"
