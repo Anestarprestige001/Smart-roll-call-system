@@ -6,6 +6,7 @@ import {
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase';
+import { getAssignableRoles } from '../rolePermissions';
 
 const ROLE_OPTIONS = ['ADMIN', 'CLASS TEACHER', 'SCHOOL MANAGER'];
 
@@ -46,6 +47,12 @@ export default function PendingApprovals() {
     const role = selectedRoles[user.id] || 'ADMIN';
     const classId = role === 'CLASS TEACHER' ? (selectedClasses[user.id] || '') : null;
     if (role === 'CLASS TEACHER' && !classId) {
+      return;
+    }
+
+    const assignable = getAssignableRoles('ICT COORDINATOR');
+    if (!assignable.includes(role)) {
+      setSelectedRoles((prev) => ({ ...prev, [user.id]: '' }));
       return;
     }
 
@@ -92,7 +99,7 @@ export default function PendingApprovals() {
                         label="Role"
                         onChange={(event) => handleRoleChange(user.id, event.target.value)}
                       >
-                        {ROLE_OPTIONS.map((option) => (
+                        {ROLE_OPTIONS.filter((option) => getAssignableRoles('ICT COORDINATOR').includes(option)).map((option) => (
                           <MenuItem key={option} value={option}>{option}</MenuItem>
                         ))}
                       </Select>

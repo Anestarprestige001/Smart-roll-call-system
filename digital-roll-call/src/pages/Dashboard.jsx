@@ -44,11 +44,18 @@ export default function Dashboard() {
   const [openAddTerm, setOpenAddTerm] = useState(false);
   const [newTerm, setNewTerm] = useState(EMPTY_TERM);
   const [termErrors, setTermErrors] = useState({});
+  const [dataError, setDataError] = useState('');
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
     const qTerms = query(collection(db, 'terms'), orderBy('createdAt', 'desc'));
     const unsubTerms = onSnapshot(qTerms, (snap) => {
       setTerms(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setDataError('');
+    }, (error) => {
+      console.error('Error loading terms:', error);
+      setDataError('Unable to load dashboard data right now.');
+      setLoading(false);
     });
 
     if (auth.currentUser) {
@@ -59,6 +66,10 @@ export default function Dashboard() {
         setRole(nextRole);
         setTeacherClassId(nextTeacherClassId);
         setTeacherClassName(data.className || nextTeacherClassId || '');
+      }, (error) => {
+        console.error('Error loading user profile for dashboard:', error);
+        setDataError('Unable to load your account context right now.');
+        setLoading(false);
       });
 
       return () => {
@@ -68,7 +79,7 @@ export default function Dashboard() {
     }
 
     return () => { unsubTerms(); };
-  }, []);
+  }, [retryToken]);
 
   useEffect(() => {
     if (!auth.currentUser) {
@@ -83,10 +94,15 @@ export default function Dashboard() {
     const unsubLogs = onSnapshot(qLogs, (snap) => {
       setAttendanceLogs(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       setLoading(false);
+      setDataError('');
+    }, (error) => {
+      console.error('Permission denied loading attendance logs:', error);
+      setLoading(false);
+      setDataError('The dashboard could not load attendance data yet. Please wait a moment and try again.');
     });
 
     return () => { unsubLogs(); };
-  }, [role, teacherClassId]);
+  }, [role, teacherClassId, retryToken]);
 
   const activeTerm = terms.find((t) => t.isActive);
   const todayStr = new Date().toISOString().split('T')[0];
@@ -207,6 +223,16 @@ export default function Dashboard() {
       <Typography variant="h4" color="primary.main" fontWeight="bold" gutterBottom>
         Dashboard
       </Typography>
+
+      {dataError && (
+        <Alert severity="warning" sx={{ mb: 3 }} action={
+          <Button color="inherit" size="small" onClick={() => setRetryToken((value) => value + 1)}>
+            Retry
+          </Button>
+        }>
+          {dataError}
+        </Alert>
+      )}
 
       <Box sx={{
         display: 'grid',

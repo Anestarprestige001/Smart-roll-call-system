@@ -38,24 +38,22 @@ function PendingApproval() {
           Please check back later. If you believe this is an error, please contact support.
         </Typography>
 
-        {currentUser?.email === 'jeffjr2060@gmail.com' && (
-          <Box sx={{ mt: 4, p: 2, border: '1px dashed grey', borderRadius: 2 }}>
-            <Typography variant="h6" gutterBottom>Initial Account Bootstrap</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              As the first administrator, you can self-approve your account to the ICT Coordinator role.
-            </Typography>
-            <Button
-              variant="contained"
-              color="secondary"
-              onClick={handleBootstrap}
-              disabled={loading || !!success}
-            >
-              {loading ? <CircularProgress size={24} color="inherit" /> : 'Promote to ICT Coordinator'}
-            </Button>
-            {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
-            {success && <Alert severity="success" sx={{ mt: 2 }}>{success}</Alert>}
-          </Box>
-        )}
+        <Box sx={{ mt: 4, p: 2, border: '1px dashed grey', borderRadius: 2 }}>
+          <Typography variant="h6" gutterBottom>Initial Account Bootstrap</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            This action is intended for a trusted bootstrap flow that should be run from a secure admin environment.
+          </Typography>
+          <Button
+            variant="contained"
+            color="secondary"
+            onClick={handleBootstrap}
+            disabled={loading || !!success}
+          >
+            {loading ? <CircularProgress size={24} color="inherit" /> : 'Promote to ICT Coordinator'}
+          </Button>
+          {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+          {success && <Alert severity="success" sx={{ mt: 2 }}>{success}</Alert>}
+        </Box>
       </Paper>
     </Box>
   );

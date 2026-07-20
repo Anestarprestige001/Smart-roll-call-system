@@ -166,9 +166,12 @@ function App() {
   const [status, setStatus] = useState('pending');
   const [classId, setClassId] = useState('');
   const [showRollCallReminder, setShowRollCallReminder] = useState(false);
+  const [accountSyncState, setAccountSyncState] = useState('ready');
 
   useEffect(() => {
     let unsubscribeUserDoc = null;
+
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
@@ -185,6 +188,7 @@ function App() {
         setStatus('pending');
         setClassId('');
         setShowRollCallReminder(false);
+        setAccountSyncState('ready');
         return;
       }
 
@@ -204,30 +208,74 @@ function App() {
           });
         }
 
-        let hasRefreshedForActive = false;
+        let lastClaimsUpdatedAt = null;
 
         unsubscribeUserDoc = onSnapshot(userDocRef, async (snap) => {
           const data = snap.data() || {};
+          const claimsUpdatedAt = data.claimsUpdatedAt || null;
+          const firestoreRole = data.role || null;
+          const isActiveDoc = data.status === 'active';
 
-          // Force a fresh ID token exactly once, the moment the user
-          // becomes active with a role, so custom claims are current
-          if (data.status === 'active' && data.role && !hasRefreshedForActive) {
-            hasRefreshedForActive = true;
+          if (claimsUpdatedAt && claimsUpdatedAt !== lastClaimsUpdatedAt) {
+            lastClaimsUpdatedAt = claimsUpdatedAt;
             try {
-              await currentUser.getIdTokenResult(true);
+              await currentUser.getIdToken(true);
             } catch (err) {
-              console.error('Error refreshing ID token:', err);
+              console.error('Error refreshing ID token after role change:', err);
             }
           }
 
-          setRole(data.role || null);
+          let tokenRole = null;
+          let tokenResolved = false;
+
+          if (isActiveDoc && firestoreRole) {
+            setAccountSyncState('syncing');
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+              try {
+                await currentUser.getIdToken(true);
+                const tokenResult = await currentUser.getIdTokenResult(false);
+                tokenRole = tokenResult.claims?.role || null;
+                tokenResolved = true;
+                if (tokenRole === firestoreRole) {
+                  break;
+                }
+              } catch (err) {
+                console.error('Error refreshing ID token for role sync:', err);
+              }
+
+              if (attempt < 2) {
+                await sleep(1000);
+              }
+            }
+
+            if (tokenResolved && tokenRole === firestoreRole) {
+              setRole(tokenRole);
+              setAccountSyncState('ready');
+            } else {
+              setRole(null);
+              setAccountSyncState('syncing');
+            }
+          } else {
+            try {
+              const tokenResult = await currentUser.getIdTokenResult(false);
+              tokenRole = tokenResult.claims?.role || null;
+            } catch (err) {
+              console.error('Error reading ID token role:', err);
+            }
+
+            setRole(tokenRole);
+            setAccountSyncState('ready');
+          }
+
           setStatus(data.status || 'pending');
           setClassId(data.classId || '');
         }, (error) => {
           console.error('Error listening to user doc:', error);
+          setAccountSyncState('error');
         });
       } catch (error) {
         console.error('Error loading user profile:', error);
+        setAccountSyncState('error');
       }
     });
 
@@ -270,7 +318,7 @@ function App() {
     }
   };
 
-  const isPending = status === 'pending' || !role;
+  const isPending = status === 'pending' || !role || accountSyncState === 'syncing' || accountSyncState === 'error';
 
   if (loading) {
     return (
@@ -302,7 +350,31 @@ function App() {
               />
               <Route
                 path="/pending-approval"
-                element={user ? (isPending ? <PendingApproval /> : <Navigate to="/dashboard" />) : <Navigate to="/login" />}
+                element={user ? (
+                  isPending ? (
+                    accountSyncState === 'syncing' ? (
+                      <Box sx={{ maxWidth: 640, mx: 'auto', mt: 8, p: 3, textAlign: 'center' }}>
+                        <Typography variant="h5" color="primary.main" gutterBottom>
+                          Syncing your account permissions
+                        </Typography>
+                        <Typography color="text.secondary">
+                          Your role change is still being applied to your authentication token. This usually takes a few seconds.
+                        </Typography>
+                      </Box>
+                    ) : accountSyncState === 'error' ? (
+                      <Box sx={{ maxWidth: 640, mx: 'auto', mt: 8, p: 3, textAlign: 'center' }}>
+                        <Typography variant="h5" color="error.main" gutterBottom>
+                          We could not sync your account yet
+                        </Typography>
+                        <Typography color="text.secondary">
+                          Your role may still be propagating. Please wait a moment and try again, or contact support if the issue persists.
+                        </Typography>
+                      </Box>
+                    ) : (
+                      <PendingApproval />
+                    )
+                  ) : <Navigate to="/dashboard" />
+                ) : <Navigate to="/login" />}
               />
               <Route
                 path="/dashboard"

@@ -1,86 +1,108 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function hasRole(role) {
+      return isSignedIn() && request.auth.token.role == role;
+    }
+
     match /users/{userId} {
-      allow read: if request.auth != null && (
-        request.auth.token.role == 'DIRECTOR' ||
-        request.auth.token.role == 'ADMIN' ||
-        request.auth.token.role == 'ICT COORDINATOR' ||
+      allow read: if isSignedIn() && (
+        hasRole('DIRECTOR') ||
+        hasRole('ADMIN') ||
+        hasRole('ICT COORDINATOR') ||
         request.auth.uid == userId
       );
-      allow create: if request.auth != null && request.auth.uid == userId &&
+      allow create: if isSignedIn() &&
+        request.auth.uid == userId &&
         request.resource.data.status == 'pending' &&
         request.resource.data.role == null &&
         request.resource.data.classId == null;
-      allow update: if request.auth != null && (
-        request.auth.token.role == 'DIRECTOR' ||
-        request.auth.token.role == 'ICT COORDINATOR' ||
+      allow update: if isSignedIn() && (
         (
           request.auth.uid == userId &&
           request.resource.data.role == resource.data.role &&
           request.resource.data.status == resource.data.status &&
           request.resource.data.classId == resource.data.classId
+        ) || (
+          hasRole('DIRECTOR') &&
+          request.resource.data.role in ['ADMIN', 'CLASS TEACHER', 'SCHOOL MANAGER', null]
+        ) || (
+          hasRole('ICT COORDINATOR') &&
+          request.resource.data.role == 'CLASS TEACHER'
         )
       );
-      allow delete: if request.auth != null && (
-        request.auth.token.role == 'DIRECTOR' ||
-        request.auth.token.role == 'ICT COORDINATOR'
+      allow delete: if isSignedIn() && (
+        hasRole('DIRECTOR') || hasRole('ICT COORDINATOR')
       );
     }
 
     match /attendance_logs/{document=**} {
-      allow read: if request.auth != null && (
-        request.auth.token.role == 'DIRECTOR' ||
-        request.auth.token.role == 'ADMIN' ||
-        request.auth.token.role == 'SCHOOL MANAGER' ||
-        (request.auth.token.role == 'CLASS TEACHER' && resource.data.classId == request.auth.token.classId)
+      allow read: if isSignedIn() && (
+        hasRole('DIRECTOR') ||
+        hasRole('ADMIN') ||
+        hasRole('ICT COORDINATOR') ||
+        (hasRole('CLASS TEACHER') && resource.data.classId == request.auth.token.classId)
       );
-      allow create: if request.auth != null && (
-        request.auth.token.role == 'DIRECTOR' ||
-        request.auth.token.role == 'ADMIN' ||
-        (request.auth.token.role == 'CLASS TEACHER' && request.resource.data.classId == request.auth.token.classId)
+      allow create: if isSignedIn() && (
+        hasRole('DIRECTOR') ||
+        hasRole('ADMIN') ||
+        hasRole('ICT COORDINATOR') ||
+        (hasRole('CLASS TEACHER') && request.resource.data.classId == request.auth.token.classId)
       );
-      allow update: if request.auth != null && (
-        request.auth.token.role == 'DIRECTOR' ||
-        request.auth.token.role == 'ADMIN' ||
+      allow update: if isSignedIn() && (
+        hasRole('DIRECTOR') ||
+        hasRole('ADMIN') ||
+        hasRole('ICT COORDINATOR') ||
         (
-          request.auth.token.role == 'CLASS TEACHER' &&
+          hasRole('CLASS TEACHER') &&
           resource.data.classId == request.auth.token.classId &&
           request.resource.data.classId == request.auth.token.classId
         )
       );
-      allow delete: if request.auth != null && (
-        request.auth.token.role == 'DIRECTOR' ||
-        request.auth.token.role == 'ADMIN' ||
-        (request.auth.token.role == 'CLASS TEACHER' && resource.data.classId == request.auth.token.classId)
+      allow delete: if isSignedIn() && (
+        hasRole('DIRECTOR') ||
+        hasRole('ADMIN') ||
+        hasRole('ICT COORDINATOR') ||
+        (hasRole('CLASS TEACHER') && resource.data.classId == request.auth.token.classId)
       );
     }
 
     match /terms/{document=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && (
-        request.auth.token.role == 'DIRECTOR' ||
-        request.auth.token.role == 'ADMIN' ||
-        request.auth.token.role == 'ICT COORDINATOR'
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (
+        hasRole('DIRECTOR') ||
+        hasRole('ADMIN') ||
+        hasRole('ICT COORDINATOR')
       );
     }
 
     match /classes/{document=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && (
-        request.auth.token.role == 'DIRECTOR' ||
-        request.auth.token.role == 'ADMIN' ||
-        request.auth.token.role == 'ICT COORDINATOR'
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (
+        hasRole('DIRECTOR') ||
+        hasRole('ADMIN') ||
+        hasRole('ICT COORDINATOR')
       );
     }
 
-    match /kitchenRecords/{document=**} {
-      allow read: if request.auth != null && (
-        request.auth.token.role == 'DIRECTOR' ||
-        request.auth.token.role == 'ADMIN' ||
-        request.auth.token.role == 'SCHOOL MANAGER'
+    match /dailyLogs/{document=**} {
+      allow read: if isSignedIn() && (
+        hasRole('DIRECTOR') ||
+        hasRole('SCHOOL MANAGER')
       );
-      allow write: if request.auth != null && request.auth.token.role == 'SCHOOL MANAGER';
+      allow create, update, delete: if isSignedIn() && hasRole('SCHOOL MANAGER');
+    }
+
+    match /kitchenRecords/{document=**} {
+      allow read: if isSignedIn() && (
+        hasRole('DIRECTOR') ||
+        hasRole('SCHOOL MANAGER')
+      );
+      allow create, update, delete: if isSignedIn() && hasRole('SCHOOL MANAGER');
     }
   }
 }

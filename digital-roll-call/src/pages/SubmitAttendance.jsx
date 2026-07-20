@@ -32,6 +32,8 @@ export default function SubmitAttendance() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [errors, setErrors] = useState({});
+  const [loadError, setLoadError] = useState('');
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
     const fetchActiveTerm = async () => {
@@ -50,6 +52,11 @@ export default function SubmitAttendance() {
 
     const unsubscribeClasses = onSnapshot(collection(db, 'classes'), (snap) => {
       setClasses(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setLoadError('');
+    }, (error) => {
+      console.error('Permission denied loading classes:', error);
+      setLoadError('Unable to load class data right now.');
+      setLoading(false);
     });
 
     const unsubscribeTeacher = auth.currentUser
@@ -58,6 +65,10 @@ export default function SubmitAttendance() {
           if (data.role === 'CLASS TEACHER' && data.classId) {
             setSelectedClassId(data.classId);
           }
+        }, (error) => {
+          console.error('Error loading teacher profile:', error);
+          setLoadError('Unable to load your account profile right now.');
+          setLoading(false);
         })
       : null;
 
@@ -66,7 +77,7 @@ export default function SubmitAttendance() {
       unsubscribeClasses();
       if (unsubscribeTeacher) unsubscribeTeacher();
     };
-  }, []);
+  }, [retryToken]);
 
   const handleChange = (key) => (e) => {
     const raw = e.target.value;
@@ -162,6 +173,16 @@ export default function SubmitAttendance() {
       <Typography variant="h4" color="primary.main" fontWeight="bold" gutterBottom>
         Submit Attendance
       </Typography>
+
+      {loadError && (
+        <Alert severity="warning" sx={{ mb: 3 }} action={
+          <Button color="inherit" size="small" onClick={() => setRetryToken((value) => value + 1)}>
+            Retry
+          </Button>
+        }>
+          {loadError}
+        </Alert>
+      )}
 
       {activeTerm ? (
         <Alert severity="info" sx={{ mb: 3 }}>
