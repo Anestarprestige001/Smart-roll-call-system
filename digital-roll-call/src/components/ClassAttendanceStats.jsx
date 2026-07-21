@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Box, Card, CardContent, Typography, Stack, Chip, CircularProgress, Alert, Button } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
 import { useAttendanceStats } from '../hooks/useAttendanceStats';
 
 export default function ClassAttendanceStats({ classId, className, activeTerm }) {
@@ -10,8 +12,47 @@ export default function ClassAttendanceStats({ classId, className, activeTerm })
     todayStats = { totalPresent: 0, totalAbsent: 0 },
     termStats = { totalPresent: 0, totalAbsent: 0 }
   } = useAttendanceStats(classId, activeTerm);
+  const [rosterTotals, setRosterTotals] = useState({ totalGirls: 0, totalBoys: 0, totalBoarders: 0, totalDayScholars: 0 });
+
+  useEffect(() => {
+    if (!classId) {
+      setRosterTotals({ totalGirls: 0, totalBoys: 0, totalBoarders: 0, totalDayScholars: 0 });
+      return undefined;
+    }
+
+    const unsubscribe = onSnapshot(doc(db, 'classes', classId), (snap) => {
+      const data = snap.exists() ? snap.data() : {};
+      setRosterTotals({
+        totalGirls: Number(data.totalGirls || 0),
+        totalBoys: Number(data.totalBoys || 0),
+        totalBoarders: Number(data.totalBoarders || 0),
+        totalDayScholars: Number(data.totalDayScholars || 0),
+      });
+    });
+
+    return () => unsubscribe();
+  }, [classId]);
 
   const hasSubmittedToday = todayLogs.length > 0;
+  const formatRatio = (absent, total, label) => {
+    if (total > 0) {
+      return `${absent} of ${total} ${label} absent`;
+    }
+    return `${absent} ${label} absent (roster total not set)`;
+  };
+
+  const todayBreakdown = [
+    formatRatio(todayStats.absentGirls || 0, rosterTotals.totalGirls, 'girls'),
+    formatRatio(todayStats.absentBoys || 0, rosterTotals.totalBoys, 'boys'),
+    formatRatio(todayStats.absentBoarders || 0, rosterTotals.totalBoarders, 'boarders'),
+    formatRatio(todayStats.absentDayScholars || 0, rosterTotals.totalDayScholars, 'day scholars'),
+  ].join(' · ');
+  const termBreakdown = [
+    formatRatio(termStats.absentGirls || 0, rosterTotals.totalGirls, 'girls'),
+    formatRatio(termStats.absentBoys || 0, rosterTotals.totalBoys, 'boys'),
+    formatRatio(termStats.absentBoarders || 0, rosterTotals.totalBoarders, 'boarders'),
+    formatRatio(termStats.absentDayScholars || 0, rosterTotals.totalDayScholars, 'day scholars'),
+  ].join(' · ');
 
   if (loading) {
     return <CircularProgress />;
@@ -41,6 +82,13 @@ export default function ClassAttendanceStats({ classId, className, activeTerm })
             <Chip label={`Term Present: ${termStats.totalPresent}`} color="success" variant="outlined" />
             <Chip label={`Term Absent: ${termStats.totalAbsent}`} color="error" variant="outlined" />
           </Stack>
+
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            {todayBreakdown}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {termBreakdown}
+          </Typography>
 
           {!hasSubmittedToday && (
             <Button

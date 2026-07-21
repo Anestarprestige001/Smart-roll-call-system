@@ -51,6 +51,10 @@ export function normalizeClassOptions(rawClasses = []) {
       name: item.name || item.className || item.id || 'Unnamed class',
       house: item.house ?? null,
       level: item.level || 'Unknown',
+      totalBoys: item.totalBoys ?? 0,
+      totalGirls: item.totalGirls ?? 0,
+      totalBoarders: item.totalBoarders ?? 0,
+      totalDayScholars: item.totalDayScholars ?? 0,
     }))
     .sort((left, right) => left.name.localeCompare(right.name));
 }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    

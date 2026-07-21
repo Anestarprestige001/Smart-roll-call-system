@@ -29,6 +29,7 @@ const PendingApproval = React.lazy(() => import('./pages/PendingApproval'));
 const PendingApprovals = React.lazy(() => import('./pages/PendingApprovals'));
 const ApprovedTeachers = React.lazy(() => import('./pages/ApprovedTeachers'));
 const Profile = React.lazy(() => import('./pages/Profile'));
+const ClassRosterManagement = React.lazy(() => import('./pages/ClassRosterManagement'));
 
 const theme = createTheme({
   palette: {
@@ -113,6 +114,9 @@ function NavBar({ user, onLogout, role, showRollCallReminder }) {
                   </Button>
                   <Button color="inherit" component={Link} to="/approved-teachers" sx={{ ml: 1 }}>
                     Approved Teachers
+                  </Button>
+                  <Button color="inherit" component={Link} to="/class-roster-management" sx={{ ml: 1 }}>
+                    Roster Management
                   </Button>
                 </>
               )}
@@ -321,6 +325,10 @@ function App() {
               <Route
                 path="/approved-teachers"
                 element={user ? (isPending || !['ICT COORDINATOR', 'DIRECTOR', 'ADMIN'].includes(role) ? <Navigate to="/dashboard" /> : <ApprovedTeachers />) : <Navigate to="/login" />}
+              />
+              <Route
+                path="/class-roster-management"
+                element={user ? (isPending || !['ICT COORDINATOR', 'DIRECTOR', 'ADMIN'].includes(role) ? <Navigate to="/dashboard" /> : <ClassRosterManagement />) : <Navigate to="/login" />}
               />
               <Route
                 path="*"
