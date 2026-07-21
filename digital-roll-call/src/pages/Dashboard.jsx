@@ -2,14 +2,15 @@ import React, { useState, useEffect } from 'react';
 import {
   Box, Card, CardContent, Typography, Button, Chip,
   Stack, Dialog, DialogTitle, DialogContent, DialogActions, TextField,
-  CircularProgress, Alert, Grid
+  CircularProgress, Alert, Grid, IconButton
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import {
   collection, query, orderBy, onSnapshot,
-  addDoc, serverTimestamp, writeBatch, doc
+  addDoc, serverTimestamp, writeBatch, doc, updateDoc
 } from 'firebase/firestore';
 import { onIdTokenChanged } from 'firebase/auth';
+import EditIcon from '@mui/icons-material/Edit';
 import { auth, db } from '../firebase';
 import { getClassesCollectionRef, normalizeClassOptions } from '../constants/classes';
 import ClassAttendanceStats from '../components/ClassAttendanceStats';
@@ -32,6 +33,7 @@ export default function Dashboard() {
 
   const [openAddTerm, setOpenAddTerm] = useState(false);
   const [newTerm, setNewTerm] = useState(EMPTY_TERM);
+  const [editingTerm, setEditingTerm] = useState(null);
   const [termErrors, setTermErrors] = useState({});
   const [dataError, setDataError] = useState('');
   const [retryToken, setRetryToken] = useState(0);
@@ -115,16 +117,38 @@ export default function Dashboard() {
     return Object.keys(e).length === 0;
   };
 
+  const handleOpenAddTerm = () => {
+    setEditingTerm(null);
+    setNewTerm(EMPTY_TERM);
+    setOpenAddTerm(true);
+  };
+
+  const handleOpenEditTerm = (term) => {
+    setEditingTerm(term);
+    setNewTerm(term);
+    setOpenAddTerm(true);
+  };
+
+  const handleCloseTermDialog = () => {
+    setOpenAddTerm(false);
+    setTermErrors({});
+    setEditingTerm(null);
+  };
+
   const handleAddTerm = async () => {
     if (!validateTerm()) return;
-    await addDoc(collection(db, 'terms'), {
-      ...newTerm,
-      isActive: false,
-      createdAt: serverTimestamp(),
-    });
-    setNewTerm(EMPTY_TERM);
-    setTermErrors({});
-    setOpenAddTerm(false);
+
+    if (editingTerm) {
+      const termRef = doc(db, 'terms', editingTerm.id);
+      await updateDoc(termRef, { name: newTerm.name, startDate: newTerm.startDate, endDate: newTerm.endDate, midtermDate: newTerm.midtermDate });
+    } else {
+      await addDoc(collection(db, 'terms'), {
+        ...newTerm,
+        isActive: false,
+        createdAt: serverTimestamp(),
+      });
+    }
+    handleCloseTermDialog();
   };
 
   const handleSetActiveTerm = async (termId) => {
@@ -166,7 +190,7 @@ export default function Dashboard() {
         <Box sx={{ mb: 4 }}>
           <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
             <Typography variant="h6" fontWeight="bold">Term Management</Typography>
-            <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setOpenAddTerm(true)}>
+            <Button variant="outlined" startIcon={<AddIcon />} onClick={handleOpenAddTerm}>
               Add Term
             </Button>
           </Stack>
@@ -176,12 +200,17 @@ export default function Dashboard() {
           ) : (
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ overflowX: 'auto', pb: 1, flexWrap: 'wrap' }} useFlexGap>
               {terms.map((term) => (
-                <Card key={term.id} sx={{ minWidth: 260, flex: '1 1 260px', borderColor: term.isActive ? 'primary.main' : 'divider', borderWidth: term.isActive ? 2 : 1, borderRadius: 2 }}>
+                <Card key={term.id} sx={{ minWidth: 280, flex: '1 1 280px', borderColor: term.isActive ? 'primary.main' : 'divider', borderWidth: term.isActive ? 2 : 1, borderRadius: 2 }}>
                   <CardContent>
-                    <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                    <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                       <Typography variant="h6" color={term.isActive ? 'primary.main' : 'text.primary'} fontWeight="bold">
                         {term.name}
                       </Typography>
+                      <IconButton size="small" onClick={() => handleOpenEditTerm(term)}>
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    </Stack>
+                    <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       {term.isActive ? (
                         <Chip label="Active" color="success" size="small" />
                       ) : (
@@ -233,18 +262,19 @@ export default function Dashboard() {
         </Box>
       )}
 
-      <Dialog open={openAddTerm} onClose={() => { setOpenAddTerm(false); setTermErrors({}); }} maxWidth="xs" fullWidth>
-        <DialogTitle>Add New Term</DialogTitle>
+      <Dialog open={openAddTerm} onClose={handleCloseTermDialog} maxWidth="xs" fullWidth>
+        <DialogTitle>{editingTerm ? 'Edit Term' : 'Add New Term'}</DialogTitle>
         <DialogContent>
           <Stack spacing={2.5} sx={{ mt: 1 }}>
             <TextField label="Term Name" placeholder="e.g. Term 1 2025" fullWidth value={newTerm.name} onChange={(e) => setNewTerm({ ...newTerm, name: e.target.value })} error={!!termErrors.name} helperText={termErrors.name ? 'Term name is required' : ''} />
             <TextField label="Start Date" type="date" fullWidth value={newTerm.startDate} onChange={(e) => setNewTerm({ ...newTerm, startDate: e.target.value })} error={!!termErrors.startDate} helperText={termErrors.startDate ? 'Start date is required' : ''} slotProps={{ inputLabel: { shrink: true } }} />
             <TextField label="End Date" type="date" fullWidth value={newTerm.endDate} onChange={(e) => setNewTerm({ ...newTerm, endDate: e.target.value })} error={!!termErrors.endDate} helperText={termErrors.endDate ? 'End date required and must be after start date' : ''} slotProps={{ inputLabel: { shrink: true } }} />
+            <TextField label="Midterm Date" type="date" fullWidth value={newTerm.midtermDate} onChange={(e) => setNewTerm({ ...newTerm, midtermDate: e.target.value })} slotProps={{ inputLabel: { shrink: true } }} />
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => { setOpenAddTerm(false); setTermErrors({}); setNewTerm(EMPTY_TERM); }}>Cancel</Button>
-          <Button variant="contained" onClick={handleAddTerm}>Create Term</Button>
+          <Button onClick={handleCloseTermDialog}>Cancel</Button>
+          <Button variant="contained" onClick={handleAddTerm}>{editingTerm ? 'Save Changes' : 'Create Term'}</Button>
         </DialogActions>
       </Dialog>
     </Box>
