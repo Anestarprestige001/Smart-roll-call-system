@@ -5,7 +5,7 @@ import {
   Snackbar, CircularProgress, Divider, Stack, MenuItem
 } from '@mui/material';
 import {
-  collection, query, where, getDocs, addDoc, serverTimestamp, onSnapshot, doc
+  collection, query, where, getDocs, getDoc, setDoc, serverTimestamp, onSnapshot, doc
 } from 'firebase/firestore';
 import { motion } from 'framer-motion';
 import { db, auth } from '../firebase';
@@ -32,6 +32,8 @@ export default function SubmitAttendance() {
   const [teacherClassName, setTeacherClassName] = useState('');
   const [selectedClassId, setSelectedClassId] = useState('');
   const [formData, setFormData] = useState(INITIAL_FORM);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [canEdit, setCanEdit] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [errors, setErrors] = useState({});
@@ -39,6 +41,29 @@ export default function SubmitAttendance() {
   const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
+    if (selectedClassId) {
+      const today = new Date().toISOString().split('T')[0];
+      const docId = `${selectedClassId}_${today}`;
+      const docRef = doc(db, 'attendance_logs', docId);
+      getDoc(docRef).then(docSnap => {
+        if (docSnap.exists()) {
+          const existingData = docSnap.data();
+          const newFormData = {};
+          const canPerformEdit = ['ADMIN', 'DIRECTOR', 'ICT COORDINATOR'].includes(userRole) || existingData.submittedByUid === auth.currentUser?.uid;
+          setCanEdit(canPerformEdit);
+
+          FIELDS.forEach(field => {
+            newFormData[field.key] = existingData[field.key] || '';
+          });
+          setFormData(newFormData);
+          setIsEditMode(true);
+        } else {
+          setCanEdit(true);
+          setFormData(INITIAL_FORM);
+          setIsEditMode(false);
+        }
+      });
+    }
     setLoading(true);
     setLoadError('');
 
@@ -97,7 +122,7 @@ export default function SubmitAttendance() {
     return () => {
       unsubscribes.forEach(unsub => unsub());
     };
-  }, [retryToken]);
+  }, [retryToken, selectedClassId, userRole]);
 
   const isClassTeacher = userRole === 'CLASS TEACHER';
 
@@ -162,6 +187,8 @@ export default function SubmitAttendance() {
       submittedByEmail: auth.currentUser?.email ?? 'Unknown',
       submittedByUid: auth.currentUser?.uid ?? null,
       timestamp: serverTimestamp(),
+      lastEditedBy: null,
+      lastEditedAt: null,
       date: today,
       termId: activeTerm.id,
       girlsBoardersPresent: num(formData.girlsBoardersPresent),
@@ -178,8 +205,9 @@ export default function SubmitAttendance() {
     };
 
     try {
-      await addDoc(collection(db, 'attendance_logs'), payload);
-      setSnackbar({ open: true, message: `Roll call for ${selectedClass?.name || selectedClassId} submitted successfully!`, severity: 'success' });
+      const docId = `${selectedClassId}_${today}`;
+      await setDoc(doc(db, 'attendance_logs', docId), payload, { merge: isEditMode });
+      setSnackbar({ open: true, message: `Roll call for ${selectedClass?.name || selectedClassId} ${isEditMode ? 'updated' : 'submitted'} successfully!`, severity: 'success' });
       setFormData(INITIAL_FORM);
     } catch (err) {
       console.error('Submit error:', err);
@@ -253,7 +281,7 @@ export default function SubmitAttendance() {
                 </Typography>
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: { xs: 1.5, md: 2 }, mb: 3 }}>
                   {FIELDS.filter((f) => !f.isAbsent).map(({ key, label }) => (
-                    <TextField key={key} fullWidth label={label} type="number" value={formData[key]} onChange={handleChange(key)} error={!!errors[key]} helperText={errors[key] ? 'Required' : ''} color="success" slotProps={{ input: { inputProps: { min: 0 } } }} />
+                    <TextField key={key} fullWidth label={label} type="number" value={formData[key]} onChange={handleChange(key)} error={!!errors[key]} helperText={errors[key] ? 'Required' : ''} color="success" slotProps={{ input: { inputProps: { min: 0 } } }} disabled={isEditMode && !canEdit} />
                   ))}
                 </Box>
 
@@ -262,9 +290,15 @@ export default function SubmitAttendance() {
                 </Typography>
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: { xs: 1.5, md: 2 }, mb: 3 }}>
                   {FIELDS.filter((f) => f.isAbsent).map(({ key, label }) => (
-                    <TextField key={key} fullWidth label={label} type="number" value={formData[key]} onChange={handleChange(key)} error={!!errors[key]} helperText={errors[key] ? 'Required' : ''} color="error" slotProps={{ input: { inputProps: { min: 0 } } }} />
+                    <TextField key={key} fullWidth label={label} type="number" value={formData[key]} onChange={handleChange(key)} error={!!errors[key]} helperText={errors[key] ? 'Required' : ''} color="error" slotProps={{ input: { inputProps: { min: 0 } } }} disabled={isEditMode && !canEdit} />
                   ))}
                 </Box>
+
+                {isEditMode && !canEdit && (
+                  <Alert severity="warning" sx={{ mb: 2 }}>
+                    This roll call was submitted by another user. Only administrators can edit it.
+                  </Alert>
+                )}
 
                 <Divider sx={{ my: 3 }} />
 
@@ -292,8 +326,8 @@ export default function SubmitAttendance() {
                   </CardContent>
                 </Card>
 
-                <Button type="submit" variant="contained" color="primary" fullWidth size="large" disabled={isSubmitting || !activeTerm} sx={{ py: 1.5, borderRadius: 2, fontSize: '1rem' }}>
-                  {isSubmitting ? <CircularProgress size={24} color="inherit" /> : 'Submit Roll Call'}
+                <Button type="submit" variant="contained" color="primary" fullWidth size="large" disabled={isSubmitting || !activeTerm || (isEditMode && !canEdit)} sx={{ py: 1.5, borderRadius: 2, fontSize: '1rem' }}>
+                  {isSubmitting ? <CircularProgress size={24} color="inherit" /> : isEditMode ? 'Update Roll Call' : 'Submit Roll Call'}
                 </Button>
               </motion.div>
             )}

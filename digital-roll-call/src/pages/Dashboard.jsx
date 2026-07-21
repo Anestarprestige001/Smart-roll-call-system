@@ -15,7 +15,7 @@ import { getClassesCollectionRef, normalizeClassOptions } from '../constants/cla
 import ClassAttendanceStats from '../components/ClassAttendanceStats';
 import SchoolWideAttendanceStats from '../components/SchoolWideAttendanceStats';
 
-const EMPTY_TERM = { name: '', startDate: '', endDate: '' };
+const EMPTY_TERM = { name: '', startDate: '', endDate: '', midtermDate: '' };
 
 export default function Dashboard() {
   const [terms, setTerms] = useState([]);

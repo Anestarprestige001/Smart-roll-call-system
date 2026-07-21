@@ -5,8 +5,27 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function daysSinceEpoch(ts) {
+      return int(ts.toMillis() / 86400000);
+    }
+
+    // Reads the CALLER's own /users/{uid} document. get()/exists() calls
+    // inside rules are not themselves subject to security rules, so this
+    // does not recurse — it's a safe, standard pattern.
+    function callerExists() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function callerData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
     function hasRole(role) {
-      return isSignedIn() && request.auth.token.role == role;
+      return isSignedIn() && callerExists() && callerData().role == role;
+    }
+
+    function callerClassId() {
+      return callerExists() ? callerData().classId : null;
     }
 
     match /users/{userId} {
@@ -16,25 +35,35 @@ service cloud.firestore {
         hasRole('ICT COORDINATOR') ||
         request.auth.uid == userId
       );
+
       allow create: if isSignedIn() &&
         request.auth.uid == userId &&
         request.resource.data.status == 'pending' &&
         request.resource.data.role == null &&
         request.resource.data.classId == null;
+
       allow update: if isSignedIn() && (
         (
+          // A user may touch their own doc, but may NOT change their
+          // own role/status/classId this way — that always requires a
+          // privileged caller via the branches below.
           request.auth.uid == userId &&
           request.resource.data.role == resource.data.role &&
           request.resource.data.status == resource.data.status &&
           request.resource.data.classId == resource.data.classId
         ) || (
+          // Director can assign/clear Admin, Class Teacher, School Manager
           hasRole('DIRECTOR') &&
+          request.auth.uid != userId &&
           request.resource.data.role in ['ADMIN', 'CLASS TEACHER', 'SCHOOL MANAGER', null]
         ) || (
+          // ICT Coordinator can only assign/clear Class Teacher
           hasRole('ICT COORDINATOR') &&
-          request.resource.data.role == 'CLASS TEACHER'
+          request.auth.uid != userId &&
+          (request.resource.data.role == 'CLASS TEACHER' || request.resource.data.role == null)
         )
       );
+
       allow delete: if isSignedIn() && (
         hasRole('DIRECTOR') || hasRole('ICT COORDINATOR')
       );
@@ -45,29 +74,31 @@ service cloud.firestore {
         hasRole('DIRECTOR') ||
         hasRole('ADMIN') ||
         hasRole('ICT COORDINATOR') ||
-        (hasRole('CLASS TEACHER') && resource.data.classId == request.auth.token.classId)
+        (hasRole('CLASS TEACHER') && resource.data.classId == callerClassId())
       );
       allow create: if isSignedIn() && (
         hasRole('DIRECTOR') ||
         hasRole('ADMIN') ||
         hasRole('ICT COORDINATOR') ||
-        (hasRole('CLASS TEACHER') && request.resource.data.classId == request.auth.token.classId)
+        (hasRole('CLASS TEACHER') && request.resource.data.classId == callerClassId())
       );
       allow update: if isSignedIn() && (
         hasRole('DIRECTOR') ||
         hasRole('ADMIN') ||
         hasRole('ICT COORDINATOR') ||
         (
-          hasRole('CLASS TEACHER') &&
-          resource.data.classId == request.auth.token.classId &&
-          request.resource.data.classId == request.auth.token.classId
+         hasRole('CLASS TEACHER') && // Teacher can edit their own submission...
+          request.auth.uid == resource.data.submittedByUid && // ...if they are the original submitter...
+          resource.data.classId == request.auth.token.classId && // ...for their currently assigned class...
+          // ...and only on the same calendar day it was created.
+          daysSinceEpoch(request.time) == daysSinceEpoch(resource.data.timestamp)
         )
       );
       allow delete: if isSignedIn() && (
         hasRole('DIRECTOR') ||
         hasRole('ADMIN') ||
         hasRole('ICT COORDINATOR') ||
-        (hasRole('CLASS TEACHER') && resource.data.classId == request.auth.token.classId)
+        (hasRole('CLASS TEACHER') && resource.data.classId == callerClassId())
       );
     }
 
