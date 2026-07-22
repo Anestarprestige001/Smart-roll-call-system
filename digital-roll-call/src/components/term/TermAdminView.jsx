@@ -2,24 +2,31 @@ import React, { useState, useEffect } from 'react';
 import {
   Box, Typography, Button, Stack, Dialog, DialogTitle, DialogContent,
   DialogActions, TextField, Card, CardContent, CircularProgress, Alert,
-  IconButton, List, ListItem, ListItemText, Select, MenuItem, FormControl, InputLabel, Chip
+  IconButton, Select, MenuItem, FormControl, InputLabel, Chip, FormControlLabel, Switch
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, writeBatch, doc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { auth, db } from '../../firebase';
 import TermProgressBar from '../TermProgressBar';
+import SchoolCalendar from './SchoolCalendar';
 
 const EMPTY_TERM = { name: '', startDate: '', endDate: '', midtermDate: '' };
-const EMPTY_EVENT = { name: '', startDate: '', endDate: '', type: 'Holiday' };
-const EVENT_TYPES = ["Trip", "Holiday", "Midterm Break", "Public Holiday", "Exams"];
+const EMPTY_EVENT = { title: '', startDate: '', endDate: '', type: 'holiday' };
+const EVENT_TYPES = [
+  { value: 'holiday', label: 'Holiday' },
+  { value: 'midterm', label: 'Midterm' },
+  { value: 'trip', label: 'Trip' },
+  { value: 'other', label: 'Other' },
+];
 
 export default function TermAdminView() {
   const [terms, setTerms] = useState([]);
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dataError, setDataError] = useState('');
+  const [isRange, setIsRange] = useState(false);
   
   const [openTermDialog, setOpenTermDialog] = useState(false);
   const [newTerm, setNewTerm] = useState(EMPTY_TERM);
@@ -50,19 +57,14 @@ export default function TermAdminView() {
   }, []);
 
   useEffect(() => {
-    if (!activeTerm) {
-      setEvents([]);
-      return;
-    }
-
-    const qEvents = query(collection(db, 'terms', activeTerm.id, 'events'), orderBy('startDate', 'asc'));
-    const unsubEvents = onSnapshot(qEvents, 
+    const qEvents = query(collection(db, 'schoolEvents'), orderBy('startDate', 'asc'));
+    const unsubEvents = onSnapshot(qEvents,
       (snap) => setEvents(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
       (error) => console.error('Error loading events:', error)
     );
 
     return () => unsubEvents();
-  }, [activeTerm?.id]);
+  }, []);
 
   const validateTerm = () => {
     const e = {};
@@ -114,31 +116,64 @@ export default function TermAdminView() {
     }
   };
 
-  const handleOpenAddEvent = () => { setEditingEvent(null); setNewEvent(EMPTY_EVENT); setOpenEventDialog(true); };
-  const handleOpenEditEvent = (event) => { setEditingEvent(event); setNewEvent(event); setOpenEventDialog(true); };
-  const handleCloseEventDialog = () => { setOpenEventDialog(false); setEditingEvent(null); };
+  const handleOpenAddEvent = (date) => {
+    setEditingEvent(null);
+    setIsRange(false);
+    setNewEvent({
+      ...EMPTY_EVENT,
+      startDate: date ? date.toISOString().slice(0, 10) : '',
+      endDate: date ? date.toISOString().slice(0, 10) : '',
+    });
+    setOpenEventDialog(true);
+  };
+
+  const handleOpenEditEvent = (event) => {
+    setEditingEvent(event);
+    setIsRange(Boolean(event.endDate && event.endDate !== event.startDate));
+    setNewEvent({
+      title: event.title || '',
+      startDate: event.startDate || '',
+      endDate: event.endDate || event.startDate || '',
+      type: event.type || 'holiday',
+    });
+    setOpenEventDialog(true);
+  };
+
+  const handleCloseEventDialog = () => {
+    setOpenEventDialog(false);
+    setEditingEvent(null);
+    setIsRange(false);
+    setNewEvent(EMPTY_EVENT);
+  };
 
   const handleAddOrUpdateEvent = async () => {
-    if (!newEvent.name || !newEvent.startDate || !activeTerm) return;
+    if (!newEvent.title || !newEvent.startDate) return;
     try {
-      const eventCollectionRef = collection(db, 'terms', activeTerm.id, 'events');
+      const eventPayload = {
+        title: newEvent.title,
+        startDate: newEvent.startDate,
+        endDate: newEvent.endDate || newEvent.startDate,
+        type: newEvent.type,
+        createdBy: auth.currentUser?.uid || 'admin',
+        createdAt: serverTimestamp(),
+      };
       if (editingEvent) {
-        await updateDoc(doc(eventCollectionRef, editingEvent.id), newEvent);
+        await updateDoc(doc(db, 'schoolEvents', editingEvent.id), eventPayload);
       } else {
-        await addDoc(eventCollectionRef, { ...newEvent, createdAt: serverTimestamp() });
+        await addDoc(collection(db, 'schoolEvents'), eventPayload);
       }
       handleCloseEventDialog();
     } catch (err) {
-      console.error("Error saving event:", err);
+      console.error('Error saving event:', err);
     }
   };
 
   const handleDeleteEvent = async (eventId) => {
     if (window.confirm('Are you sure you want to delete this event?')) {
       try {
-        await deleteDoc(doc(db, 'terms', activeTerm.id, 'events', eventId));
+        await deleteDoc(doc(db, 'schoolEvents', eventId));
       } catch (err) {
-        console.error("Error deleting event:", err);
+        console.error('Error deleting event:', err);
       }
     }
   };
@@ -147,10 +182,10 @@ export default function TermAdminView() {
   if (dataError) return <Alert severity="error">{dataError}</Alert>;
 
   return (
-    <Stack spacing={4}>
-      <Card>
-        <CardContent>
-          <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
+    <Stack spacing={2.5}>
+      <Card sx={{ boxShadow: 0, border: '1px solid', borderColor: 'divider' }}>
+        <CardContent sx={{ p: { xs: 1.5, md: 2 } }}>
+          <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.5}>
             <Typography variant="h6" fontWeight="bold">Term Schedules</Typography>
             <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenAddTerm}>
               Add Term
@@ -190,42 +225,22 @@ export default function TermAdminView() {
             <Typography variant="h6" fontWeight="bold">
               School Events Calendar {activeTerm ? `(${activeTerm.name})` : ''}
             </Typography>
-            <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenAddEvent} disabled={!activeTerm}>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpenAddEvent(new Date())} disabled={!activeTerm}>
               Add Event
             </Button>
           </Stack>
 
           {!activeTerm ? (
             <Alert severity="info">Set an active term above to manage events and calendar schedules.</Alert>
-          ) : events.length === 0 ? (
-            <Typography color="text.secondary">No events scheduled for this term.</Typography>
           ) : (
-            <List>
-              {events.map(event => (
-                <ListItem 
-                  key={event.id}
-                  divider
-                  secondaryAction={
-                    <Stack direction="row" spacing={1}>
-                      <IconButton edge="end" onClick={() => handleOpenEditEvent(event)}><EditIcon /></IconButton>
-                      <IconButton edge="end" color="error" onClick={() => handleDeleteEvent(event.id)}><DeleteIcon /></IconButton>
-                    </Stack>
-                  }
-                >
-                  <ListItemText 
-                    primary={
-                      <Stack direction="row" spacing={1} alignItems="center">
-                        <Typography fontWeight="bold">{event.name}</Typography>
-                        <Chip label={event.type} size="small" color={event.type === 'Holiday' ? 'error' : 'primary'} variant="outlined" />
-                      </Stack>
-                    }
-                    secondary={event.endDate && event.endDate !== event.startDate 
-                      ? `Dates: ${event.startDate} to ${event.endDate}` 
-                      : `Date: ${event.startDate}`}
-                  />
-                </ListItem>
-              ))}
-            </List>
+            <Box sx={{ mt: 1 }}>
+              <SchoolCalendar
+                events={events}
+                readOnly={false}
+                onDateClick={(date) => handleOpenAddEvent(date)}
+                onEventClick={(event) => handleOpenEditEvent(event)}
+              />
+            </Box>
           )}
         </CardContent>
       </Card>
@@ -252,20 +267,33 @@ export default function TermAdminView() {
         <DialogTitle>{editingEvent ? 'Edit Event' : 'Add New Event'}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
-            <TextField label="Event Name" fullWidth value={newEvent.name} onChange={(e) => setNewEvent({ ...newEvent, name: e.target.value })} />
+            <TextField label="Event Title" fullWidth value={newEvent.title} onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })} />
             <FormControl fullWidth>
               <InputLabel>Type</InputLabel>
               <Select value={newEvent.type} label="Type" onChange={(e) => setNewEvent({ ...newEvent, type: e.target.value })}>
-                {EVENT_TYPES.map(type => <MenuItem key={type} value={type}>{type}</MenuItem>)}
+                {EVENT_TYPES.map((type) => <MenuItem key={type.value} value={type.value}>{type.label}</MenuItem>)}
               </Select>
             </FormControl>
+            <FormControlLabel
+              control={<Switch checked={isRange} onChange={(e) => setIsRange(e.target.checked)} />}
+              label="Date range"
+            />
             <TextField label="Start Date" type="date" fullWidth value={newEvent.startDate} onChange={(e) => setNewEvent({ ...newEvent, startDate: e.target.value })} InputLabelProps={{ shrink: true }} />
-            <TextField label="End Date (Optional)" type="date" fullWidth value={newEvent.endDate} onChange={(e) => setNewEvent({ ...newEvent, endDate: e.target.value })} InputLabelProps={{ shrink: true }} />
+            {isRange && (
+              <TextField label="End Date" type="date" fullWidth value={newEvent.endDate} onChange={(e) => setNewEvent({ ...newEvent, endDate: e.target.value })} InputLabelProps={{ shrink: true }} />
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCloseEventDialog}>Cancel</Button>
-          <Button onClick={handleAddOrUpdateEvent} variant="contained">Save</Button>
+          <Stack direction="row" spacing={1} sx={{ flexGrow: 1, justifyContent: 'space-between' }}>
+            {editingEvent ? (
+              <Button color="error" onClick={() => handleDeleteEvent(editingEvent.id)}>Delete</Button>
+            ) : <Box />}
+            <Stack direction="row" spacing={1}>
+              <Button onClick={handleCloseEventDialog}>Cancel</Button>
+              <Button onClick={handleAddOrUpdateEvent} variant="contained">Save</Button>
+            </Stack>
+          </Stack>
         </DialogActions>
       </Dialog>
     </Stack>

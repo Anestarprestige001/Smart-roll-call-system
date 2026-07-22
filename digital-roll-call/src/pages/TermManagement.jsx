@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, CircularProgress, Alert, Tabs, Tab } from '@mui/material';
+import { Box, Container, Typography, CircularProgress, Alert, Tabs, Tab } from '@mui/material';
 import { onSnapshot, doc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import TermAdminView from '../components/term/TermAdminView';
@@ -116,11 +116,11 @@ export default function TermManagement() {
   };
 
   return (
-    <Box sx={{ maxWidth: 1000, mx: 'auto', p: { xs: 2, md: 4 } }}>
+     <Container maxWidth={false} disableGutters>
       <Typography variant="h4" color="primary.main" fontWeight="bold" gutterBottom>
         Term & Calendar Management
       </Typography>
       {renderRoleView()}
-    </Box>
+    </Container>
   );
 }

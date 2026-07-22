@@ -11,6 +11,7 @@ import PersonOffIcon from '@mui/icons-material/PersonOff';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlined';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutlined';
 import { db } from '../../firebase';
+import { getRosterTotals } from '../../constants/classes';
 import { useAttendanceStats } from '../../hooks/useAttendanceStats';
 import StatCard from '../StatCard';
 
@@ -33,25 +34,17 @@ export default function ClassStatsDetailModal({ open, onClose, classId, classNam
     todayStats = { totalPresent: 0, totalAbsent: 0, absentGirls: 0, absentBoys: 0, absentBoarders: 0, absentDayScholars: 0 },
     termStats = { totalPresent: 0, totalAbsent: 0, absentGirls: 0, absentBoys: 0, absentBoarders: 0, absentDayScholars: 0, attendanceRate: 0 }
   } = useAttendanceStats(classId, activeTerm);
-  const [rosterTotals, setRosterTotals] = useState({ totalGirls: 0, totalBoys: 0, totalBoarders: 0, totalDayScholars: 0 });
+  const [rosterTotals, setRosterTotals] = useState(getRosterTotals({}));
 
   useEffect(() => {
     if (!classId) {
-      setRosterTotals({ totalGirls: 0, totalBoys: 0, totalBoarders: 0, totalDayScholars: 0 });
+      setRosterTotals(getRosterTotals({}));
       return undefined;
     }
 
     const unsubscribe = onSnapshot(doc(db, 'classes', classId), (snap) => {
       const data = snap.exists() ? snap.data() : {};
-      const totalGirls = Number(data.totalGirls || 0);
-      const totalBoys = Number(data.totalBoys || 0);
-      setRosterTotals({
-        total: totalGirls + totalBoys,
-        totalGirls,
-        totalBoys,
-        totalBoarders: Number(data.totalBoarders || 0),
-        totalDayScholars: Number(data.totalDayScholars || 0),
-      });
+      setRosterTotals(getRosterTotals(data));
     });
 
     return () => unsubscribe();

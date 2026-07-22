@@ -6,26 +6,24 @@ import {
   Card,
   CardContent,
   CircularProgress,
-  Divider,
+  Grid,
   Stack,
   TextField,
   Typography,
 } from '@mui/material';
-import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
-import { getClassesCollectionRef, normalizeClassOptions } from '../constants/classes';
-
-const ROSTER_FIELDS = [
-  { key: 'totalBoys', label: 'Total Boys' },
-  { key: 'totalGirls', label: 'Total Girls' },
-  { key: 'totalBoarders', label: 'Total Boarders' },
-  { key: 'totalDayScholars', label: 'Total Day Scholars' },
-];
+import {
+  getClassesCollectionRef,
+  getRosterTotals,
+  normalizeClassOptions,
+  ROSTER_FIELD_DEFINITIONS,
+} from '../constants/classes';
 
 export default function ClassRosterManagement() {
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [role, setRole] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
   const [formValues, setFormValues] = useState({});
   const [savingClassId, setSavingClassId] = useState(null);
   const [error, setError] = useState('');
@@ -38,12 +36,13 @@ export default function ClassRosterManagement() {
       setFormValues((prev) => {
         const nextValues = {};
         nextClasses.forEach((classItem) => {
+          const rosterTotals = getRosterTotals(classItem);
           nextValues[classItem.id] = {
             ...(prev[classItem.id] || {}),
-            totalBoys: prev[classItem.id]?.totalBoys ?? classItem.totalBoys ?? 0,
-            totalGirls: prev[classItem.id]?.totalGirls ?? classItem.totalGirls ?? 0,
-            totalBoarders: prev[classItem.id]?.totalBoarders ?? classItem.totalBoarders ?? 0,
-            totalDayScholars: prev[classItem.id]?.totalDayScholars ?? classItem.totalDayScholars ?? 0,
+            totalGirlBoarders: prev[classItem.id]?.totalGirlBoarders ?? rosterTotals.totalGirlBoarders ?? 0,
+            totalGirlDayScholars: prev[classItem.id]?.totalGirlDayScholars ?? rosterTotals.totalGirlDayScholars ?? 0,
+            totalBoyBoarders: prev[classItem.id]?.totalBoyBoarders ?? rosterTotals.totalBoyBoarders ?? 0,
+            totalBoyDayScholars: prev[classItem.id]?.totalBoyDayScholars ?? rosterTotals.totalBoyDayScholars ?? 0,
           };
         });
         return nextValues;
@@ -59,7 +58,7 @@ export default function ClassRosterManagement() {
     let unsubscribeUser = null;
     if (auth.currentUser) {
       unsubscribeUser = onSnapshot(doc(db, 'users', auth.currentUser.uid), (snap) => {
-        setRole(snap.data()?.role || null);
+        setUserProfile(snap.data() || null);
       });
     }
 
@@ -69,7 +68,24 @@ export default function ClassRosterManagement() {
     };
   }, []);
 
-  const canEditRoster = role === 'ADMIN' || role === 'ICT COORDINATOR';
+  const role = userProfile?.role || null;
+  const assignedClassId = userProfile?.assignedClassId || userProfile?.classId || null;
+
+  const filteredClasses = classes.filter((classItem) => {
+    if (role === 'ADMIN' || role === 'ICT COORDINATOR' || role === 'DIRECTOR') {
+      return true;
+    }
+    if (role === 'CLASS TEACHER' || role === 'TEACHER') {
+      return classItem.id === assignedClassId;
+    }
+    return false;
+  });
+
+  const canEditRoster = (classId) => {
+    if (role === 'ADMIN' || role === 'ICT COORDINATOR' || role === 'DIRECTOR') return true;
+    if ((role === 'CLASS TEACHER' || role === 'TEACHER') && classId === assignedClassId) return true;
+    return false;
+  };
 
   const handleFieldChange = (classId, key) => (event) => {
     const rawValue = event.target.value;
@@ -84,16 +100,28 @@ export default function ClassRosterManagement() {
 
   const handleSave = async (classItem) => {
     const values = formValues[classItem.id] || {};
+    const totalGirlBoarders = Number.parseInt(values.totalGirlBoarders ?? classItem.totalGirlBoarders ?? 0, 10) || 0;
+    const totalGirlDayScholars = Number.parseInt(values.totalGirlDayScholars ?? classItem.totalGirlDayScholars ?? 0, 10) || 0;
+    const totalBoyBoarders = Number.parseInt(values.totalBoyBoarders ?? classItem.totalBoyBoarders ?? 0, 10) || 0;
+    const totalBoyDayScholars = Number.parseInt(values.totalBoyDayScholars ?? classItem.totalBoyDayScholars ?? 0, 10) || 0;
+
+    const totalGirls = totalGirlBoarders + totalGirlDayScholars;
+    const totalBoys = totalBoyBoarders + totalBoyDayScholars;
     const payload = {
-      totalBoys: Number.parseInt(values.totalBoys ?? classItem.totalBoys ?? 0, 10) || 0,
-      totalGirls: Number.parseInt(values.totalGirls ?? classItem.totalGirls ?? 0, 10) || 0,
-      totalBoarders: Number.parseInt(values.totalBoarders ?? classItem.totalBoarders ?? 0, 10) || 0,
-      totalDayScholars: Number.parseInt(values.totalDayScholars ?? classItem.totalDayScholars ?? 0, 10) || 0,
+      totalGirlBoarders,
+      totalGirlDayScholars,
+      totalBoyBoarders,
+      totalBoyDayScholars,
+      totalGirls,
+      totalBoys,
+      totalBoarders: totalGirlBoarders + totalBoyBoarders,
+      totalDayScholars: totalGirlDayScholars + totalBoyDayScholars,
+      totalStudents: totalGirls + totalBoys,
     };
 
     setSavingClassId(classItem.id);
     try {
-      await updateDoc(doc(db, 'classes', classItem.id), payload);
+      await setDoc(doc(db, 'classes', classItem.id), payload, { merge: true });
       setSuccessMessage(`Saved roster totals for ${classItem.name}.`);
       setError('');
     } catch (err) {
@@ -118,18 +146,20 @@ export default function ClassRosterManagement() {
         Class Roster Management
       </Typography>
       <Typography color="text.secondary" sx={{ mb: 3 }}>
-        Update each class roster total for boys, girls, boarders, and day scholars.
+        Update each class roster total for girls and boys by boarding and day scholar status.
       </Typography>
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {successMessage && <Alert severity="success" sx={{ mb: 2 }}>{successMessage}</Alert>}
 
-      {classes.length === 0 ? (
+      {filteredClasses.length === 0 ? (
         <Alert severity="info">No classes found yet.</Alert>
       ) : (
         <Stack spacing={2}>
-          {classes.map((classItem) => {
+          {filteredClasses.map((classItem) => {
             const values = formValues[classItem.id] || {};
+            const editable = canEditRoster(classItem.id);
+            const rosterTotals = getRosterTotals({ ...classItem, ...values });
             return (
               <Card key={classItem.id} elevation={1}>
                 <CardContent>
@@ -137,30 +167,31 @@ export default function ClassRosterManagement() {
                     <Box sx={{ flexGrow: 1 }}>
                       <Typography variant="h6" fontWeight="bold">{classItem.name}</Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Current totals: Boys {classItem.totalBoys ?? 0} • Girls {classItem.totalGirls ?? 0} • Boarders {classItem.totalBoarders ?? 0} • Day scholars {classItem.totalDayScholars ?? 0}
+                        Girls {rosterTotals.totalGirls} • Boys {rosterTotals.totalBoys} • Boarders {rosterTotals.totalBoarders} • Day scholars {rosterTotals.totalDayScholars}
                       </Typography>
                     </Box>
 
-                    {canEditRoster ? (
+                    {editable ? (
                       <Box sx={{ flexGrow: 2, width: '100%' }}>
-                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ flexWrap: 'wrap' }}>
-                          {ROSTER_FIELDS.map((field) => (
-                            <TextField
-                              key={`${classItem.id}-${field.key}`}
-                              label={field.label}
-                              type="number"
-                              size="small"
-                              value={values[field.key] ?? ''}
-                              onChange={handleFieldChange(classItem.id, field.key)}
-                              inputProps={{ min: 0, step: 1 }}
-                              sx={{ minWidth: 180 }}
-                            />
+                        <Grid container spacing={1.5}>
+                          {ROSTER_FIELD_DEFINITIONS.map((field) => (
+                            <Grid item xs={12} sm={6} key={`${classItem.id}-${field.key}`}>
+                              <TextField
+                                fullWidth
+                                label={field.label}
+                                type="number"
+                                size="small"
+                                value={values[field.key] ?? ''}
+                                onChange={handleFieldChange(classItem.id, field.key)}
+                                inputProps={{ min: 0, step: 1 }}
+                              />
+                            </Grid>
                           ))}
-                        </Stack>
+                        </Grid>
 
                         <Button
                           variant="contained"
-                          sx={{ mt: 2 }}
+                          sx={{ mt: 2, width: { xs: '100%', sm: 'auto' } }}
                           onClick={() => handleSave(classItem)}
                           disabled={savingClassId === classItem.id}
                         >
@@ -169,7 +200,7 @@ export default function ClassRosterManagement() {
                       </Box>
                     ) : (
                       <Alert severity="info" sx={{ width: '100%' }}>
-                        You do not have permission to edit roster totals.
+                        You do not have permission to edit roster totals for this class.
                       </Alert>
                     )}
                   </Stack>

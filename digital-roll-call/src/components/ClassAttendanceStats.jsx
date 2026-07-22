@@ -3,6 +3,7 @@ import { Box, Card, CardContent, Typography, Stack, Chip, CircularProgress, Aler
 import { useNavigate } from 'react-router-dom';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
+import { getRosterTotals } from '../constants/classes';
 import { useAttendanceStats } from '../hooks/useAttendanceStats';
 
 export default function ClassAttendanceStats({ classId, className, activeTerm }) {
@@ -12,22 +13,17 @@ export default function ClassAttendanceStats({ classId, className, activeTerm })
     todayStats = { totalPresent: 0, totalAbsent: 0 },
     termStats = { totalPresent: 0, totalAbsent: 0, absentGirls: 0, absentBoys: 0, absentBoarders: 0, absentDayScholars: 0 }
   } = useAttendanceStats(classId, activeTerm);
-  const [rosterTotals, setRosterTotals] = useState({ totalGirls: 0, totalBoys: 0, totalBoarders: 0, totalDayScholars: 0 });
+  const [rosterTotals, setRosterTotals] = useState(getRosterTotals({}));
 
   useEffect(() => {
     if (!classId) {
-      setRosterTotals({ totalGirls: 0, totalBoys: 0, totalBoarders: 0, totalDayScholars: 0 });
+      setRosterTotals(getRosterTotals({}));
       return undefined;
     }
 
     const unsubscribe = onSnapshot(doc(db, 'classes', classId), (snap) => {
       const data = snap.exists() ? snap.data() : {};
-      setRosterTotals({
-        totalGirls: Number(data.totalGirls || 0),
-        totalBoys: Number(data.totalBoys || 0),
-        totalBoarders: Number(data.totalBoarders || 0),
-        totalDayScholars: Number(data.totalDayScholars || 0),
-      });
+      setRosterTotals(getRosterTotals(data));
     });
 
     return () => unsubscribe();

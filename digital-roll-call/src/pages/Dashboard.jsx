@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Button, CircularProgress, Alert, Grid } from '@mui/material';
+import { Box, Container, Typography, Button, CircularProgress, Alert, Grid } from '@mui/material';
 import { collection, query, orderBy, onSnapshot, doc } from 'firebase/firestore';
 import { onIdTokenChanged } from 'firebase/auth';
 import { auth, db } from '../firebase';
@@ -100,7 +100,7 @@ export default function Dashboard() {
   }
 
   return (
-    <Box sx={{ p: { xs: 1, sm: 2, md: 0 }, maxWidth: 1400, mx: 'auto' }}>
+    <Container maxWidth={false} disableGutters>
       {/* <Typography variant="h4" color="primary.main" fontWeight="bold" gutterBottom>
         Dashboard
       </Typography> */}
@@ -157,6 +157,6 @@ export default function Dashboard() {
           )}
         </Box>
       )}
-    </Box>
+    </Container>
   );
 }

@@ -6,7 +6,7 @@ import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import { onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import { getClassesCollectionRef } from '../constants/classes';
+import { getClassesCollectionRef, getRosterTotals } from '../constants/classes';
 import { useAttendanceStats } from '../hooks/useAttendanceStats';
 import StatCard from '../components/StatCard';
 
@@ -17,18 +17,19 @@ export default function SchoolWideAttendanceStats({ activeTerm, totalClasses }) 
     termStats = { totalStudents: 0, absentGirls: 0, absentBoys: 0, absentBoarders: 0, absentDayScholars: 0, attendanceRate: 0 },
     todayLogs = []
   } = useAttendanceStats(null, activeTerm);
-  const [schoolRosterTotals, setSchoolRosterTotals] = useState({ totalGirls: 0, totalBoys: 0, totalBoarders: 0, totalDayScholars: 0 });
+  const [schoolRosterTotals, setSchoolRosterTotals] = useState(getRosterTotals({}));
 
   useEffect(() => {
     const unsubscribe = onSnapshot(getClassesCollectionRef(db), (snap) => {
       const totals = snap.docs.reduce((acc, docSnap) => {
         const data = docSnap.data() || {};
-        acc.totalGirls += Number(data.totalGirls || 0);
-        acc.totalBoys += Number(data.totalBoys || 0);
-        acc.totalBoarders += Number(data.totalBoarders || 0);
-        acc.totalDayScholars += Number(data.totalDayScholars || 0);
+        const rosterTotals = getRosterTotals(data);
+        acc.totalGirls += rosterTotals.totalGirls;
+        acc.totalBoys += rosterTotals.totalBoys;
+        acc.totalBoarders += rosterTotals.totalBoarders;
+        acc.totalDayScholars += rosterTotals.totalDayScholars;
         return acc;
-      }, { totalGirls: 0, totalBoys: 0, totalBoarders: 0, totalDayScholars: 0 });
+      }, getRosterTotals({}));
       setSchoolRosterTotals(totals);
     });
 

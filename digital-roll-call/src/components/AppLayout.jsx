@@ -127,7 +127,7 @@ function AppLayout({ userRole, children }) {
             minWidth: 0,
             pt: 9,
             pb: 4,
-            px: { xs: 1.5, sm: 2 },
+            px: { xs: 1, sm: 1.5, md: 2 },
             width: '100%',
           }}
         >

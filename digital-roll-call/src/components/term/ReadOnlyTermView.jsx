@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Card, CardContent, CircularProgress, Alert, List, ListItem, ListItemText, Stack, Chip } from '@mui/material';
-import { collection, query, orderBy, onSnapshot, where } from 'firebase/firestore';
+import { Box, Typography, Card, CardContent, CircularProgress, Alert, Stack } from '@mui/material';
+import { collection, query, onSnapshot, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import TermProgressBar from '../TermProgressBar';
+import SchoolCalendar from './SchoolCalendar';
 
 export default function ReadOnlyTermView() {
   const [activeTerm, setActiveTerm] = useState(null);
@@ -36,12 +37,12 @@ export default function ReadOnlyTermView() {
       return;
     }
 
-    const qEvents = query(collection(db, 'terms', activeTerm.id, 'events'), orderBy('startDate', 'asc'));
+    const qEvents = query(collection(db, 'schoolEvents'));
     const unsubEvents = onSnapshot(qEvents, (snap) => {
-      setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setEvents(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       setLoading(false);
     }, (err) => {
-      console.error("Error loading events:", err);
+      console.error('Error loading school events:', err);
       setError('Could not load school events.');
       setLoading(false);
     });
@@ -54,9 +55,9 @@ export default function ReadOnlyTermView() {
   if (!activeTerm) return <Alert severity="info">There is currently no active term configured by the administrator.</Alert>;
 
   return (
-    <Stack spacing={4}>
-      <Card>
-        <CardContent>
+    <Stack spacing={2.5}>
+      <Card sx={{ boxShadow: 0, border: '1px solid', borderColor: 'divider' }}>
+        <CardContent sx={{ p: { xs: 1.5, md: 2 } }}>
           <Typography variant="h6" fontWeight="bold" gutterBottom>
             Active Term: {activeTerm.name}
           </Typography>
@@ -64,38 +65,15 @@ export default function ReadOnlyTermView() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent>
+      <Card sx={{ boxShadow: 0, border: '1px solid', borderColor: 'divider' }}>
+        <CardContent sx={{ p: { xs: 1.5, md: 2 } }}>
           <Typography variant="h6" fontWeight="bold" gutterBottom>
             School Calendar & Upcoming Events
           </Typography>
           {events.length === 0 ? (
-            <Typography color="text.secondary">No upcoming events scheduled for this term.</Typography>
+            <Typography color="text.secondary">No school events scheduled.</Typography>
           ) : (
-            <List>
-              {events.map(event => (
-                <ListItem key={event.id} divider>
-                  <ListItemText 
-                    primary={
-                      <Stack direction="row" spacing={1} alignItems="center">
-                        <Typography fontWeight="bold">{event.name}</Typography>
-                        <Chip 
-                          label={event.type} 
-                          size="small" 
-                          color={event.type === 'Holiday' ? 'error' : 'primary'} 
-                          variant="outlined" 
-                        />
-                      </Stack>
-                    }
-                    secondary={
-                      event.endDate && event.endDate !== event.startDate 
-                        ? `Dates: ${event.startDate} to ${event.endDate}` 
-                        : `Date: ${event.startDate}`
-                    }
-                  />
-                </ListItem>
-              ))}
-            </List>
+            <SchoolCalendar events={events} readOnly />
           )}
         </CardContent>
       </Card>

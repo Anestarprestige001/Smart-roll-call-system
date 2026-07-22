@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, getDocs, doc } from 'firebase/firestore';
 import { db } from '../firebase.js';
+import { getRosterTotals } from '../constants/classes';
 
 // Helper function to calculate school days elapsed (excluding weekends & holidays)
 function getSchoolDays(termStartDate, holidays = []) {
@@ -75,14 +76,16 @@ export function useAttendanceStats(classId, activeTerm) {
       const classRef = doc(db, 'classes', classId);
       unsubRoster = onSnapshot(classRef, (snap) => {
         const data = snap.data() || {};
-        setTotalRoster(Number(data.totalGirls || 0) + Number(data.totalBoys || 0));
+        const rosterTotals = getRosterTotals(data);
+        setTotalRoster(rosterTotals.totalGirls + rosterTotals.totalBoys);
       });
     } else {
       const classesRef = collection(db, 'classes');
       unsubRoster = onSnapshot(classesRef, (snap) => {
         const total = snap.docs.reduce((acc, docSnap) => {
           const data = docSnap.data() || {};
-          return acc + Number(data.totalGirls || 0) + Number(data.totalBoys || 0);
+          const rosterTotals = getRosterTotals(data);
+          return acc + rosterTotals.totalGirls + rosterTotals.totalBoys;
         }, 0);
         setTotalRoster(total);
       });

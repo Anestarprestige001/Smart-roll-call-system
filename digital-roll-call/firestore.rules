@@ -25,7 +25,21 @@ service cloud.firestore {
     }
 
     function callerClassId() {
-      return callerExists() ? callerData().classId : null;
+      return callerExists() ? (callerData().assignedClassId || callerData().classId || null) : null;
+    }
+
+    function allowedRosterFields() {
+      return [
+        'totalGirlBoarders',
+        'totalGirlDayScholars',
+        'totalBoyBoarders',
+        'totalBoyDayScholars',
+        'totalGirls',
+        'totalBoys',
+        'totalBoarders',
+        'totalDayScholars',
+        'totalStudents'
+      ];
     }
 
     match /users/{userId} {
@@ -111,9 +125,24 @@ service cloud.firestore {
       );
     }
 
-    match /classes/{document=**} {
+    match /classes/{classId} {
       allow read: if isSignedIn();
-      allow write: if isSignedIn() && (
+      allow create: if isSignedIn() && (
+        hasRole('DIRECTOR') ||
+        hasRole('ADMIN') ||
+        hasRole('ICT COORDINATOR')
+      );
+      allow update: if isSignedIn() && (
+        hasRole('DIRECTOR') ||
+        hasRole('ADMIN') ||
+        hasRole('ICT COORDINATOR') ||
+        (
+          (hasRole('CLASS TEACHER') || hasRole('TEACHER')) &&
+          classId == callerClassId() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedRosterFields())
+        )
+      );
+      allow delete: if isSignedIn() && (
         hasRole('DIRECTOR') ||
         hasRole('ADMIN') ||
         hasRole('ICT COORDINATOR')
