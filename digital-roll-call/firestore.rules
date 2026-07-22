@@ -128,12 +128,12 @@ service cloud.firestore {
       allow create, update, delete: if isSignedIn() && hasRole('SCHOOL MANAGER');
     }
 
-    match /kitchenRecords/{document=**} {
+    match /kitchenRecords/{recordId} {
       allow read: if isSignedIn() && (
         hasRole('DIRECTOR') ||
         hasRole('SCHOOL MANAGER')
       );
-      allow create, update, delete: if isSignedIn() && hasRole('SCHOOL MANAGER');
+      allow write: if isSignedIn() && hasRole('SCHOOL MANAGER');
     }
   }
 }

@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box, Card, CardContent, Typography, Button, TextField,
-  Select, InputLabel, FormControl, Alert,
+  Select, InputLabel, FormControl, Alert, Chip,
   Snackbar, CircularProgress, Divider, Stack, MenuItem
 } from '@mui/material';
+import EventIcon from '@mui/icons-material/Event';
 import {
-  collection, query, where, getDocs, getDoc, setDoc, serverTimestamp, onSnapshot, doc
+  collection, query, where, getDocs, getDoc, setDoc, serverTimestamp, onSnapshot, doc,
+  Timestamp
 } from 'firebase/firestore';
 import { motion } from 'framer-motion';
 import { db, auth } from '../firebase';
@@ -37,6 +39,7 @@ export default function SubmitAttendance() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [errors, setErrors] = useState({});
+  const [holidayEvent, setHolidayEvent] = useState(null);
   const [loadError, setLoadError] = useState('');
   const [retryToken, setRetryToken] = useState(0);
 
@@ -67,6 +70,7 @@ export default function SubmitAttendance() {
     setLoading(true);
     setLoadError('');
 
+
     const promises = [];
     const unsubscribes = [];
 
@@ -74,6 +78,28 @@ export default function SubmitAttendance() {
     const termPromise = getDocs(query(collection(db, 'terms'), where('isActive', '==', true))).then(snapshot => {
       if (!snapshot.empty) {
         setActiveTerm({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
+
+        // After getting active term, check for holidays
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayString = today.toISOString().split('T')[0];
+
+        const eventsRef = collection(db, 'terms', snapshot.docs[0].id, 'events');
+        const holidayQuery = query(eventsRef, where('type', 'in', ['Holiday', 'Midterm Break', 'Public Holiday']));
+        
+        return getDocs(holidayQuery).then(eventsSnapshot => {
+          for (const eventDoc of eventsSnapshot.docs) {
+            const event = eventDoc.data();
+            const startDate = new Date(event.startDate + 'T00:00:00');
+            const endDate = new Date(event.endDate + 'T23:59:59');
+
+            if (today >= startDate && today <= endDate) {
+              setHolidayEvent(event);
+              break;
+            }
+          }
+        });
+
       }
     }).catch(err => {
       console.error('Error fetching active term:', err);
@@ -251,6 +277,27 @@ export default function SubmitAttendance() {
         </Alert>
       )}
 
+      {holidayEvent && (
+        <Card sx={{ p: 2, mb: 3, borderLeft: '6px solid #e67c73', borderRadius: 2, boxShadow: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <EventIcon sx={{ fontSize: 36, color: 'primary.main' }} />
+            <Box>
+              <Chip label={holidayEvent.type} size="small" color="info" sx={{ mb: 0.5, fontWeight: 'bold' }} />
+              <Typography variant="h6" fontWeight="bold">
+                {holidayEvent.name}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {new Date(holidayEvent.startDate + 'T00:00:00').toLocaleDateString()} – {new Date(holidayEvent.endDate + 'T00:00:00').toLocaleDateString()}
+              </Typography>
+            </Box>
+          </Box>
+          <Typography variant="body1" color="text.primary" sx={{ mt: 2 }}>
+            Today is marked as {holidayEvent.name}. No roll call needed today. Enjoy the time off!
+          </Typography>
+        </Card>
+      )}
+
+      {!holidayEvent && (
       <Card elevation={4} sx={{ borderRadius: 3 }}>
         <CardContent sx={{ p: { xs: 1.5, md: 3 } }}>
           <Box component="form" onSubmit={handleSubmit} noValidate>
@@ -334,6 +381,7 @@ export default function SubmitAttendance() {
           </Box>
         </CardContent>
       </Card>
+      )}
 
       <Snackbar open={snackbar.open} autoHideDuration={6000} onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
         <Alert severity={snackbar.severity} onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))} variant="filled" sx={{ width: '100%' }}>

@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react';
 import {
   Box, Card, CardContent, Typography, TextField, Button, Stack, Alert, CircularProgress
 } from '@mui/material';
-import { updateProfile } from 'firebase/auth';
+import { signOut, updateProfile } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebase';
+import { useNavigate } from 'react-router-dom';
 
 export default function Profile() {
   const [displayName, setDisplayName] = useState('');
@@ -13,6 +14,7 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const navigate = useNavigate();
 
   useEffect(() => {
     const currentUser = auth.currentUser;
@@ -45,6 +47,15 @@ export default function Profile() {
       setMessage(error.message || 'Unable to update profile.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      navigate('/login');
+    } catch (error) {
+      console.error('Logout failed:', error);
     }
   };
 
@@ -85,6 +96,9 @@ export default function Profile() {
             />
             <Button variant="contained" onClick={handleSave} disabled={saving}>
               {saving ? <CircularProgress size={22} /> : 'Save profile'}
+            </Button>
+            <Button variant="outlined" color="error" onClick={handleLogout} sx={{ mt: 2 }}>
+              Logout
             </Button>
           </Stack>
         </CardContent>

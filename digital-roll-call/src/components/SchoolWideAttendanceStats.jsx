@@ -14,7 +14,7 @@ export default function SchoolWideAttendanceStats({ activeTerm, totalClasses }) 
   const theme = useTheme();
   const {
     todayStats = { totalPresent: 0, totalAbsent: 0 },
-    termStats = { totalStudents: 0 },
+    termStats = { totalStudents: 0, absentGirls: 0, absentBoys: 0, absentBoarders: 0, absentDayScholars: 0 },
     todayLogs = []
   } = useAttendanceStats(null, activeTerm);
   const [schoolRosterTotals, setSchoolRosterTotals] = useState({ totalGirls: 0, totalBoys: 0, totalBoarders: 0, totalDayScholars: 0 });

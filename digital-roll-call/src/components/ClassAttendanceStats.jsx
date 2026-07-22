@@ -10,7 +10,7 @@ export default function ClassAttendanceStats({ classId, className, activeTerm })
   const {
     loading, error, logs, todayLogs,
     todayStats = { totalPresent: 0, totalAbsent: 0 },
-    termStats = { totalPresent: 0, totalAbsent: 0 }
+    termStats = { totalPresent: 0, totalAbsent: 0, absentGirls: 0, absentBoys: 0, absentBoarders: 0, absentDayScholars: 0 }
   } = useAttendanceStats(classId, activeTerm);
   const [rosterTotals, setRosterTotals] = useState({ totalGirls: 0, totalBoys: 0, totalBoarders: 0, totalDayScholars: 0 });
 
