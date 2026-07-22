@@ -1,20 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Box, Card, CardContent, Typography, Button, Chip,
-  Stack, Dialog, DialogTitle, DialogContent, DialogActions, TextField,
-  CircularProgress, Alert, Grid, IconButton
-} from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import {
-  collection, query, orderBy, onSnapshot,
-  addDoc, serverTimestamp, writeBatch, doc, updateDoc
-} from 'firebase/firestore';
+import { Box, Typography, Button, CircularProgress, Alert, Grid } from '@mui/material';
+import { collection, query, orderBy, onSnapshot, doc } from 'firebase/firestore';
 import { onIdTokenChanged } from 'firebase/auth';
-import EditIcon from '@mui/icons-material/Edit';
 import { auth, db } from '../firebase';
 import { getClassesCollectionRef, normalizeClassOptions } from '../constants/classes';
-import ClassAttendanceStats from '../components/ClassAttendanceStats';
 import SchoolWideAttendanceStats from '../components/SchoolWideAttendanceStats';
+import ClassStatsDetailModal from '../components/dashboard/ClassStatsDetailModal';
 
 const EMPTY_TERM = { name: '', startDate: '', endDate: '', midtermDate: '' };
 
@@ -28,13 +19,6 @@ export default function Dashboard() {
   const [teacherClassId, setTeacherClassId] = useState('');
   const [teacherClassName, setTeacherClassName] = useState('');
 
-  const [filterDate, setFilterDate] = useState('');
-  const [filterClass, setFilterClass] = useState('');
-
-  const [openAddTerm, setOpenAddTerm] = useState(false);
-  const [newTerm, setNewTerm] = useState(EMPTY_TERM);
-  const [editingTerm, setEditingTerm] = useState(null);
-  const [termErrors, setTermErrors] = useState({});
   const [dataError, setDataError] = useState('');
   const [retryToken, setRetryToken] = useState(0);
 
@@ -107,59 +91,6 @@ export default function Dashboard() {
   const canManageTerms = ['DIRECTOR', 'ADMIN', 'ICT COORDINATOR'].includes(role);
   const isTeacher = role === 'CLASS TEACHER';
 
-  const validateTerm = () => {
-    const e = {};
-    if (!newTerm.name.trim()) e.name = true;
-    if (!newTerm.startDate) e.startDate = true;
-    if (!newTerm.endDate) e.endDate = true;
-    if (newTerm.startDate && newTerm.endDate && newTerm.endDate < newTerm.startDate) e.endDate = true;
-    setTermErrors(e);
-    return Object.keys(e).length === 0;
-  };
-
-  const handleOpenAddTerm = () => {
-    setEditingTerm(null);
-    setNewTerm(EMPTY_TERM);
-    setOpenAddTerm(true);
-  };
-
-  const handleOpenEditTerm = (term) => {
-    setEditingTerm(term);
-    setNewTerm(term);
-    setOpenAddTerm(true);
-  };
-
-  const handleCloseTermDialog = () => {
-    setOpenAddTerm(false);
-    setTermErrors({});
-    setEditingTerm(null);
-  };
-
-  const handleAddTerm = async () => {
-    if (!validateTerm()) return;
-
-    if (editingTerm) {
-      const termRef = doc(db, 'terms', editingTerm.id);
-      await updateDoc(termRef, { name: newTerm.name, startDate: newTerm.startDate, endDate: newTerm.endDate, midtermDate: newTerm.midtermDate });
-    } else {
-      await addDoc(collection(db, 'terms'), {
-        ...newTerm,
-        isActive: false,
-        createdAt: serverTimestamp(),
-      });
-    }
-    handleCloseTermDialog();
-  };
-
-  const handleSetActiveTerm = async (termId) => {
-    const batch = writeBatch(db);
-    terms.forEach((t) => {
-      const ref = doc(db, 'terms', t.id);
-      batch.update(ref, { isActive: t.id === termId });
-    });
-    await batch.commit();
-  };
-
   if (loading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
@@ -169,10 +100,10 @@ export default function Dashboard() {
   }
 
   return (
-    <Box sx={{ p: { xs: 2, md: 4 }, maxWidth: 1400, mx: 'auto' }}>
-      <Typography variant="h4" color="primary.main" fontWeight="bold" gutterBottom>
+    <Box sx={{ p: { xs: 1, sm: 2, md: 0 }, maxWidth: 1400, mx: 'auto' }}>
+      {/* <Typography variant="h4" color="primary.main" fontWeight="bold" gutterBottom>
         Dashboard
-      </Typography>
+      </Typography> */}
 
       {dataError && (
         <Alert severity="warning" sx={{ mb: 3 }} action={
@@ -184,54 +115,19 @@ export default function Dashboard() {
         </Alert>
       )}
 
-      {!isTeacher && <SchoolWideAttendanceStats activeTerm={activeTerm} totalClasses={classes.length} />}
-
-      {canManageTerms && (
-        <Box sx={{ mb: 4 }}>
-          <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h6" fontWeight="bold">Term Management</Typography>
-            <Button variant="outlined" startIcon={<AddIcon />} onClick={handleOpenAddTerm}>
-              Add Term
-            </Button>
-          </Stack>
-
-          {terms.length === 0 ? (
-            <Alert severity="warning">No terms created yet. Add a term to start recording attendance.</Alert>
-          ) : (
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ overflowX: 'auto', pb: 1, flexWrap: 'wrap' }} useFlexGap>
-              {terms.map((term) => (
-                <Card key={term.id} sx={{ minWidth: 280, flex: '1 1 280px', borderColor: term.isActive ? 'primary.main' : 'divider', borderWidth: term.isActive ? 2 : 1, borderRadius: 2 }}>
-                  <CardContent>
-                    <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                      <Typography variant="h6" color={term.isActive ? 'primary.main' : 'text.primary'} fontWeight="bold">
-                        {term.name}
-                      </Typography>
-                      <IconButton size="small" onClick={() => handleOpenEditTerm(term)}>
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                    </Stack>
-                    <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      {term.isActive ? (
-                        <Chip label="Active" color="success" size="small" />
-                      ) : (
-                        <Button size="small" variant="outlined" onClick={() => handleSetActiveTerm(term.id)}>
-                          Set Active
-                        </Button>
-                      )}
-                    </Stack>
-                    <Typography variant="body2" color="text.secondary">
-                      {term.startDate} → {term.endDate}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              ))}
-            </Stack>
-          )}
-        </Box>
-      )}
+      {!isTeacher && activeTerm && <SchoolWideAttendanceStats activeTerm={activeTerm} totalClasses={classes.length} />}
 
       {isTeacher ? (
-        <ClassAttendanceStats classId={teacherClassId} className={teacherClassName} activeTerm={activeTerm} />
+        (teacherClassId && activeTerm) ? (
+          <ClassStatsDetailModal
+            classId={teacherClassId}
+            className={teacherClassName}
+            activeTerm={activeTerm}
+            isTeacherView={true}
+          />
+        ) : (
+          <Alert severity="info">Loading your class information...</Alert>
+        )
       ) : (
         <Box>
           <Typography variant="h6" fontWeight="bold" sx={{ mb: 2 }}>View Class Stats</Typography>
@@ -251,32 +147,16 @@ export default function Dashboard() {
           </Grid>
 
           {selectedClassId && (
-            <Box sx={{ mt: 4 }}>
-              <ClassAttendanceStats
-                classId={selectedClassId}
-                className={classes.find(c => c.id === selectedClassId)?.name}
-                activeTerm={activeTerm}
-              />
-            </Box>
+            <ClassStatsDetailModal
+              open={!!selectedClassId}
+              onClose={() => setSelectedClassId(null)}
+              classId={selectedClassId}
+              className={classes.find(c => c.id === selectedClassId)?.name}
+              activeTerm={activeTerm}
+            />
           )}
         </Box>
       )}
-
-      <Dialog open={openAddTerm} onClose={handleCloseTermDialog} maxWidth="xs" fullWidth>
-        <DialogTitle>{editingTerm ? 'Edit Term' : 'Add New Term'}</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2.5} sx={{ mt: 1 }}>
-            <TextField label="Term Name" placeholder="e.g. Term 1 2025" fullWidth value={newTerm.name} onChange={(e) => setNewTerm({ ...newTerm, name: e.target.value })} error={!!termErrors.name} helperText={termErrors.name ? 'Term name is required' : ''} />
-            <TextField label="Start Date" type="date" fullWidth value={newTerm.startDate} onChange={(e) => setNewTerm({ ...newTerm, startDate: e.target.value })} error={!!termErrors.startDate} helperText={termErrors.startDate ? 'Start date is required' : ''} slotProps={{ inputLabel: { shrink: true } }} />
-            <TextField label="End Date" type="date" fullWidth value={newTerm.endDate} onChange={(e) => setNewTerm({ ...newTerm, endDate: e.target.value })} error={!!termErrors.endDate} helperText={termErrors.endDate ? 'End date required and must be after start date' : ''} slotProps={{ inputLabel: { shrink: true } }} />
-            <TextField label="Midterm Date" type="date" fullWidth value={newTerm.midtermDate} onChange={(e) => setNewTerm({ ...newTerm, midtermDate: e.target.value })} slotProps={{ inputLabel: { shrink: true } }} />
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={handleCloseTermDialog}>Cancel</Button>
-          <Button variant="contained" onClick={handleAddTerm}>{editingTerm ? 'Save Changes' : 'Create Term'}</Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 }
