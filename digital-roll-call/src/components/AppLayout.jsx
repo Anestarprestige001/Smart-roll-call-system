@@ -1,41 +1,31 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  AppBar, Box, CssBaseline, Drawer, Fab, Toolbar, useMediaQuery, useTheme,
+  AppBar, Box, CssBaseline, Drawer, Toolbar, useMediaQuery, useTheme,
   List, ListItem, ListItemButton, ListItemIcon, ListItemText,
   BottomNavigation, BottomNavigationAction, Typography, Avatar, Divider, Dialog, IconButton
 } from '@mui/material';
 import {
   Home as HomeIcon,
   Person as ProfileIcon,
-  BarChart as StatsIcon,
   Book as TermsIcon,
   Add as AddIcon,
-  Restaurant as KitchenIcon,
   Notifications as NotificationsIcon,
   Close as CloseIcon,
 } from '@mui/icons-material';
-import { styled } from '@mui/material/styles';
+import { normalizeRole } from '../rolePermissions';
 
 const drawerWidth = 240;
 const rightDrawerWidth = 320;
 
 const NAV_ITEMS = {
   HOME: { text: 'Home', icon: <HomeIcon />, path: '/' },
-  TERM_MANAGEMENT: { text: 'Terms', icon: <TermsIcon />, path: '/term-management' },
-  STATS: { text: 'Stats', icon: <StatsIcon />, path: '/stats' },
+  TERM_MANAGEMENT: { text: 'Term Management', icon: <TermsIcon />, path: '/term-management' },
+  PLUS: { text: 'Submit Attendance', icon: <AddIcon />, path: '/submit-attendance' },
+  PLUS_INVENTORY: { text: 'Add Inventory', icon: <AddIcon />, path: '/kitchen-records' },
   PROFILE: { text: 'Profile', icon: <ProfileIcon />, path: '/profile' },
   NOTIFICATIONS: { text: 'Notifications', icon: <NotificationsIcon />, path: '/notifications' },
 };
-
-const StyledFab = styled(Fab)({
-  position: 'absolute',
-  zIndex: 1,
-  top: -30,
-  left: 0,
-  right: 0,
-  margin: '0 auto',
-});
 
 // Notifications Panel Component
 function NotificationPanel({ onClose }) {
@@ -64,16 +54,17 @@ function AppLayout({ userRole, children }) {
   const isLargeScreen = useMediaQuery(theme.breakpoints.up('lg'));
   const navigate = useNavigate();
   const location = useLocation();
+  const normalizedRole = normalizeRole(userRole);
 
   const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   const getNavItems = () => {
-    const items = [NAV_ITEMS.HOME,  NAV_ITEMS.PROFILE];
-    if (userRole !== 'CLASS TEACHER') {
-      items.splice(1, 0, NAV_ITEMS.NOTIFICATIONS);
-      items.splice(1, 0, NAV_ITEMS.TERM_MANAGEMENT);
+    if (normalizedRole === 'CLASS TEACHER') {
+      return [NAV_ITEMS.HOME, NAV_ITEMS.TERM_MANAGEMENT,  NAV_ITEMS.PLUS, NAV_ITEMS.NOTIFICATIONS, NAV_ITEMS.PROFILE];
     }
-    return items;
+
+    const plusItem = normalizedRole === 'SCHOOL MANAGER' ? NAV_ITEMS.PLUS_INVENTORY : NAV_ITEMS.PLUS;
+    return [NAV_ITEMS.HOME, NAV_ITEMS.TERM_MANAGEMENT, plusItem, NAV_ITEMS.NOTIFICATIONS, NAV_ITEMS.PROFILE];
   };
 
   const navItems = getNavItems();
@@ -85,10 +76,6 @@ function AppLayout({ userRole, children }) {
     }
     navigate(path);
   };
-
-  const fabAction = userRole === 'SCHOOL MANAGER'
-    ? { path: '/kitchen-records', icon: <KitchenIcon /> }
-    : { path: '/submit-attendance', icon: <AddIcon /> };
 
   if (isDesktop) {
     return (
@@ -133,14 +120,14 @@ function AppLayout({ userRole, children }) {
         </Drawer>
 
         {/* MIDDLE CONTENT COLUMN */}
-        <Box 
-          component="main" 
-          sx={{ 
-            flexGrow: 1, 
-            minWidth: 0, 
-            pt: 9, 
-            pb: 4, 
-            px: { xs: 1.5, sm: 2 }, // Tightened horizontal padding to maximize screen real estate
+        <Box
+          component="main"
+          sx={{
+            flexGrow: 1,
+            minWidth: 0,
+            pt: 9,
+            pb: 4,
+            px: { xs: 1.5, sm: 2 },
             width: '100%',
           }}
         >
@@ -186,9 +173,6 @@ function AppLayout({ userRole, children }) {
               <BottomNavigationAction key={item.path} label={item.text} value={item.path} icon={item.icon} />
             ))}
           </BottomNavigation>
-          <StyledFab color="secondary" aria-label="add" onClick={() => handleNavigation(fabAction.path)}>
-            {fabAction.icon}
-          </StyledFab>
         </Toolbar>
       </AppBar>
 
