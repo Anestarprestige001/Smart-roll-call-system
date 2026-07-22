@@ -65,6 +65,11 @@ export default function SubmitAttendance() {
           setFormData(INITIAL_FORM);
           setIsEditMode(false);
         }
+      }).catch((err) => {
+        console.error('Error checking existing roll call:', err);
+        setCanEdit(true);
+        setFormData(INITIAL_FORM);
+        setIsEditMode(false);
       });
     }
     setLoading(true);

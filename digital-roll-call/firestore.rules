@@ -88,7 +88,7 @@ service cloud.firestore {
         hasRole('DIRECTOR') ||
         hasRole('ADMIN') ||
         hasRole('ICT COORDINATOR') ||
-        (hasRole('CLASS TEACHER') && resource.data.classId == callerClassId())
+        (hasRole('CLASS TEACHER') && (resource == null || resource.data.classId == callerClassId()))
       );
       allow create: if isSignedIn() && (
         hasRole('DIRECTOR') ||
@@ -101,10 +101,9 @@ service cloud.firestore {
         hasRole('ADMIN') ||
         hasRole('ICT COORDINATOR') ||
         (
-         hasRole('CLASS TEACHER') && // Teacher can edit their own submission...
-          request.auth.uid == resource.data.submittedByUid && // ...if they are the original submitter...
-          resource.data.classId == request.auth.token.classId && // ...for their currently assigned class...
-          // ...and only on the same calendar day it was created.
+          hasRole('CLASS TEACHER') &&
+          request.auth.uid == resource.data.submittedByUid &&
+          resource.data.classId == callerClassId() &&
           daysSinceEpoch(request.time) == daysSinceEpoch(resource.data.timestamp)
         )
       );
@@ -115,7 +114,7 @@ service cloud.firestore {
         (hasRole('CLASS TEACHER') && resource.data.classId == callerClassId())
       );
     }
-
+    
     match /terms/{document=**} {
       allow read: if isSignedIn();
       allow write: if isSignedIn() && (
@@ -164,5 +163,15 @@ service cloud.firestore {
       );
       allow write: if isSignedIn() && hasRole('SCHOOL MANAGER');
     }
+    
+    match /schoolEvents/{eventId} {
+  allow read: if isSignedIn();
+  allow create, update, delete: if isSignedIn() && (
+    hasRole('CLASS TEACHER')||
+    hasRole('DIRECTOR') ||
+    hasRole('ADMIN') ||
+    hasRole('ICT COORDINATOR')
+  );
+}
   }
 }
