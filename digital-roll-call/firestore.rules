@@ -24,8 +24,8 @@ service cloud.firestore {
       return isSignedIn() && callerExists() && callerData().role == role;
     }
 
-    function callerClassId() {
-      return callerExists() ? (callerData().assignedClassId || callerData().classId || null) : null;
+   function callerClassId() {
+     return callerExists() ? callerData().get('assignedClassId', callerData().get('classId', null)) : null;
     }
 
     function allowedRosterFields() {
@@ -167,7 +167,6 @@ service cloud.firestore {
     match /schoolEvents/{eventId} {
   allow read: if isSignedIn();
   allow create, update, delete: if isSignedIn() && (
-    hasRole('CLASS TEACHER')||
     hasRole('DIRECTOR') ||
     hasRole('ADMIN') ||
     hasRole('ICT COORDINATOR')
