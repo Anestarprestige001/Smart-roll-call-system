@@ -14,24 +14,29 @@ import { db } from '../../firebase';
 import { getRosterTotals } from '../../constants/classes';
 import { useAttendanceStats } from '../../hooks/useAttendanceStats';
 import StatCard from '../StatCard';
-
-function BreakdownRow({ label, value }) {
-  return (
-    <Grid item xs={12} sm={6}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
-        <Typography variant="body2" color="text.secondary">{label}</Typography>
-        <Typography variant="body2" fontWeight="bold">{value}</Typography>
-      </Box>
-    </Grid>
-  );
-}
+import AttendanceBreakdown from './AttendanceBreakdown';
 
 export default function ClassStatsDetailModal({ open, onClose, classId, className, activeTerm, isTeacherView = false }) {
   const navigate = useNavigate();
   const theme = useTheme();
   const {
     loading, error, logs, todayLogs,
-    todayStats = { totalPresent: 0, totalAbsent: 0, absentGirls: 0, absentBoys: 0, absentBoarders: 0, absentDayScholars: 0 },
+    todayStats = {
+      totalPresent: 0,
+      totalAbsent: 0,
+      girlsBoardersPresent: 0,
+      girlsDayScholarsPresent: 0,
+      boysBoardersPresent: 0,
+      boysDayScholarsPresent: 0,
+      girlsBoardersAbsent: 0,
+      girlsDayScholarsAbsent: 0,
+      boysBoardersAbsent: 0,
+      boysDayScholarsAbsent: 0,
+      absentGirls: 0,
+      absentBoys: 0,
+      absentBoarders: 0,
+      absentDayScholars: 0,
+    },
     termStats = { totalPresent: 0, totalAbsent: 0, absentGirls: 0, absentBoys: 0, absentBoarders: 0, absentDayScholars: 0, attendanceRate: 0 }
   } = useAttendanceStats(classId, activeTerm);
   const [rosterTotals, setRosterTotals] = useState(getRosterTotals({}));
@@ -91,13 +96,11 @@ export default function ClassStatsDetailModal({ open, onClose, classId, classNam
           ))}
         </Grid>
 
-        <Typography variant="h6" gutterBottom>Demographic Breakdown</Typography>
-        <Grid container spacing={1} sx={{ mb: 2 }}>
-          <BreakdownRow label="Girls Absent Today" value={formatRatio(todayStats.absentGirls, rosterTotals.totalGirls)} />
-          <BreakdownRow label="Boys Absent Today" value={formatRatio(todayStats.absentBoys, rosterTotals.totalBoys)} />
-          <BreakdownRow label="Boarders Absent Today" value={formatRatio(todayStats.absentBoarders, rosterTotals.totalBoarders)} />
-          <BreakdownRow label="Day Scholars Absent Today" value={formatRatio(todayStats.absentDayScholars, rosterTotals.totalDayScholars)} />
-        </Grid>
+        <AttendanceBreakdown
+          todayStats={todayStats}
+          rosterTotals={rosterTotals}
+          title="Today's Attendance Breakdown"
+        />
 
         <Divider sx={{ my: 2 }} />
 
