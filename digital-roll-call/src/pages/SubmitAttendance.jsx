@@ -10,6 +10,7 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { db, auth } from '../firebase';
 import { normalizeClassOptions, getClassesCollectionRef } from '../constants/classes';
 
@@ -42,6 +43,7 @@ export default function SubmitAttendance() {
   const [holidayEvent, setHolidayEvent] = useState(null);
   const [loadError, setLoadError] = useState('');
   const [retryToken, setRetryToken] = useState(0);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (selectedClassId) {
@@ -234,7 +236,9 @@ export default function SubmitAttendance() {
       const docId = `${selectedClassId}_${today}`;
       await setDoc(doc(db, 'attendance_logs', docId), payload, { merge: isEditMode });
       setSnackbar({ open: true, message: `Roll call for ${selectedClass?.name || selectedClassId} ${isEditMode ? 'updated' : 'submitted'} successfully!`, severity: 'success' });
-      setFormData(INITIAL_FORM);
+      setTimeout(() => {
+        navigate('/');
+      }, 1200);
     } catch (err) {
       console.error('Submit error:', err);
       setSnackbar({ open: true, message: 'Failed to submit attendance. Try again.', severity: 'error' });

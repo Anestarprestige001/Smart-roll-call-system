@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { collection, query, where, onSnapshot, getDocs, doc } from 'firebase/firestore';
 import { db } from '../firebase.js';
 import { getRosterTotals } from '../constants/classes';
@@ -41,6 +41,7 @@ export function useAttendanceStats(classId, activeTerm) {
   const [logs, setLogs] = useState([]);
   const [todayLogs, setTodayLogs] = useState([]);
   const [totalRoster, setTotalRoster] = useState(0);
+  const totalRosterRef = useRef(0);
 
   const [termStats, setTermStats] = useState({
     totalPresent: 0,
@@ -56,6 +57,14 @@ export function useAttendanceStats(classId, activeTerm) {
   const [todayStats, setTodayStats] = useState({
     totalPresent: 0,
     totalAbsent: 0,
+    girlsBoardersPresent: 0,
+    girlsDayScholarsPresent: 0,
+    boysBoardersPresent: 0,
+    boysDayScholarsPresent: 0,
+    girlsBoardersAbsent: 0,
+    girlsDayScholarsAbsent: 0,
+    boysBoardersAbsent: 0,
+    boysDayScholarsAbsent: 0,
     absentGirls: 0,
     absentBoys: 0,
     absentBoarders: 0,
@@ -77,7 +86,9 @@ export function useAttendanceStats(classId, activeTerm) {
       unsubRoster = onSnapshot(classRef, (snap) => {
         const data = snap.data() || {};
         const rosterTotals = getRosterTotals(data);
-        setTotalRoster(rosterTotals.totalGirls + rosterTotals.totalBoys);
+        const nextTotal = rosterTotals.totalGirls + rosterTotals.totalBoys;
+        totalRosterRef.current = nextTotal;
+        setTotalRoster(nextTotal);
       });
     } else {
       const classesRef = collection(db, 'classes');
@@ -87,6 +98,7 @@ export function useAttendanceStats(classId, activeTerm) {
           const rosterTotals = getRosterTotals(data);
           return acc + rosterTotals.totalGirls + rosterTotals.totalBoys;
         }, 0);
+        totalRosterRef.current = total;
         setTotalRoster(total);
       });
     }
@@ -145,7 +157,7 @@ export function useAttendanceStats(classId, activeTerm) {
         });
 
         // Term Attendance Rate Calculation
-        const possibleStudentDays = totalRoster * schoolDaysElapsed;
+        const possibleStudentDays = totalRosterRef.current * schoolDaysElapsed;
         newTermStats.attendanceRate = possibleStudentDays > 0 
           ? Number(((newTermStats.totalPresent / possibleStudentDays) * 100).toFixed(1)) 
           : 0;
@@ -156,6 +168,14 @@ export function useAttendanceStats(classId, activeTerm) {
         const newTodayStats = todayLogsData.reduce((acc, log) => {
           acc.totalPresent += log.totalPresent || 0;
           acc.totalAbsent += log.totalAbsent || 0;
+          acc.girlsBoardersPresent += log.girlsBoardersPresent || 0;
+          acc.girlsDayScholarsPresent += log.girlsDayScholarsPresent || 0;
+          acc.boysBoardersPresent += log.boysBoardersPresent || 0;
+          acc.boysDayScholarsPresent += log.boysDayScholarsPresent || 0;
+          acc.girlsBoardersAbsent += log.girlsBoardersAbsent || 0;
+          acc.girlsDayScholarsAbsent += log.girlsDayScholarsAbsent || 0;
+          acc.boysBoardersAbsent += log.boysBoardersAbsent || 0;
+          acc.boysDayScholarsAbsent += log.boysDayScholarsAbsent || 0;
           acc.absentGirls += (log.girlsBoardersAbsent || 0) + (log.girlsDayScholarsAbsent || 0);
           acc.absentBoys += (log.boysBoardersAbsent || 0) + (log.boysDayScholarsAbsent || 0);
           acc.absentBoarders += (log.girlsBoardersAbsent || 0) + (log.boysBoardersAbsent || 0);
@@ -164,6 +184,14 @@ export function useAttendanceStats(classId, activeTerm) {
         }, {
           totalPresent: 0,
           totalAbsent: 0,
+          girlsBoardersPresent: 0,
+          girlsDayScholarsPresent: 0,
+          boysBoardersPresent: 0,
+          boysDayScholarsPresent: 0,
+          girlsBoardersAbsent: 0,
+          girlsDayScholarsAbsent: 0,
+          boysBoardersAbsent: 0,
+          boysDayScholarsAbsent: 0,
           absentGirls: 0,
           absentBoys: 0,
           absentBoarders: 0,
@@ -188,7 +216,7 @@ export function useAttendanceStats(classId, activeTerm) {
       if (unsubRoster) unsubRoster();
       if (unsubLogs) unsubLogs();
     };
-  }, [classId, activeTerm, totalRoster]);
+  }, [classId, activeTerm]);
 
   return { loading, error, logs, todayLogs, termStats, todayStats, totalRoster };
 }
