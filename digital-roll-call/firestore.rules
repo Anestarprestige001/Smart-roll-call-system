@@ -87,6 +87,7 @@ service cloud.firestore {
       allow read: if isSignedIn() && (
         hasRole('DIRECTOR') ||
         hasRole('ADMIN') ||
+        hasRole('SCHOOL MANAGER') ||
         hasRole('ICT COORDINATOR') ||
         (hasRole('CLASS TEACHER') && (resource == null || resource.data.classId == callerClassId()))
       );
