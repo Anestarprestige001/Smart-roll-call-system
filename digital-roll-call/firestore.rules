@@ -149,6 +149,14 @@ service cloud.firestore {
       );
     }
 
+    match /dutyRoster/{document=**} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && (
+        hasRole('ADMIN') ||
+        hasRole('ICT COORDINATOR')
+      );
+    }
+
     match /dailyLogs/{document=**} {
       allow read: if isSignedIn() && (
         hasRole('DIRECTOR') ||

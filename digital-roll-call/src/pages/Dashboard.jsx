@@ -1,11 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Container, Typography, Button, CircularProgress, Alert, Grid } from '@mui/material';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlined';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutlined';
 import { collection, query, orderBy, onSnapshot, doc } from 'firebase/firestore';
 import { onIdTokenChanged } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { getClassesCollectionRef, normalizeClassOptions } from '../constants/classes';
 import SchoolWideAttendanceStats from '../components/SchoolWideAttendanceStats';
 import ClassStatsDetailModal from '../components/dashboard/ClassStatsDetailModal';
+import TeachersOnDutyManager from '../components/dashboard/TeachersOnDutyManager';
+import TeachersOnDutyBanner from '../components/dashboard/TeachersOnDutyBanner';
+import TeachersOnDutyChecklist from '../components/dashboard/TeachersOnDutyChecklist';
+import TeachersOnDutyList from '../components/dashboard/TeachersOnDutyList';
+import { getCurrentWeekKey } from '../components/dashboard/teacherDutyHelpers';
+import { useTodaysAttendanceStatus } from '../hooks/useTodaysAttendanceStatus';
 
 const EMPTY_TERM = { name: '', startDate: '', endDate: '', midtermDate: '' };
 
@@ -18,9 +26,11 @@ export default function Dashboard() {
   const [role, setRole] = useState(null);
   const [teacherClassId, setTeacherClassId] = useState('');
   const [teacherClassName, setTeacherClassName] = useState('');
+  const [isOnDutyTeacher, setIsOnDutyTeacher] = useState(false);
 
   const [dataError, setDataError] = useState('');
   const [retryToken, setRetryToken] = useState(0);
+  const [isDutyChecklistOpen, setIsDutyChecklistOpen] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -89,7 +99,25 @@ export default function Dashboard() {
 
   const activeTerm = terms.find((t) => t.isActive);
   const canManageTerms = ['DIRECTOR', 'ADMIN', 'ICT COORDINATOR'].includes(role);
+  const canManageDutyRoster = ['ADMIN', 'ICT COORDINATOR'].includes(role);
   const isTeacher = role === 'CLASS TEACHER';
+  const currentUserUid = auth.currentUser?.uid || null;
+  const { attendanceStatus: classAttendanceStatus } = useTodaysAttendanceStatus(classes, !isTeacher);
+
+  useEffect(() => {
+    if (!currentUserUid) {
+      setIsOnDutyTeacher(false);
+      return;
+    }
+
+    const weekOf = getCurrentWeekKey();
+    const unsubscribeDutyRoster = onSnapshot(doc(db, 'dutyRoster', weekOf), (snap) => {
+      const ids = snap.exists() ? (snap.data().onDutyUserIds || []) : [];
+      setIsOnDutyTeacher(ids.includes(currentUserUid));
+    });
+
+    return () => unsubscribeDutyRoster();
+  }, [currentUserUid]);
 
   if (loading) {
     return (
@@ -115,6 +143,17 @@ export default function Dashboard() {
         </Alert>
       )}
 
+      {canManageDutyRoster ? (
+        <TeachersOnDutyManager />
+      ) : (
+        auth.currentUser && isOnDutyTeacher ? (
+          <TeachersOnDutyBanner onOpenDetails={() => setIsDutyChecklistOpen(true)} />
+        ) : (
+          auth.currentUser && <TeachersOnDutyList onOpenChecklist={() => setIsDutyChecklistOpen(true)} />
+        )
+      )}
+      {auth.currentUser && <TeachersOnDutyChecklist open={isDutyChecklistOpen} onClose={() => setIsDutyChecklistOpen(false)} />}
+
       {!isTeacher && activeTerm && <SchoolWideAttendanceStats activeTerm={activeTerm} totalClasses={classes.length} />}
 
       {isTeacher ? (
@@ -131,19 +170,31 @@ export default function Dashboard() {
       ) : (
         <Box>
           <Typography variant="h6" fontWeight="bold" sx={{ mb: 2 }}>View Class Stats</Typography>
-          <Grid container spacing={2}>
-            {classes.map(c => (
-              <Grid item key={c.id} xs={12} sm={6} md={4}>
-                <Button
-                  fullWidth
-                  variant={selectedClassId === c.id ? 'contained' : 'outlined'}
-                  onClick={() => setSelectedClassId(c.id)}
-                  sx={{ justifyContent: 'flex-start', p: 2 }}
-                >
-                  {c.name}
-                </Button>
-              </Grid>
-            ))}
+<Grid container spacing={2}>
+            {classes.map((c) => {
+              const status = classAttendanceStatus.find((item) => item.classId === c.id);
+              const hasSubmitted = Boolean(status?.exists);
+
+              return (
+                <Grid item key={c.id} xs={12} sm={6} md={4}>
+                  <Button
+                    fullWidth
+                    variant={selectedClassId === c.id ? 'contained' : 'outlined'}
+                    onClick={() => setSelectedClassId(c.id)}
+                    sx={{ justifyContent: 'flex-start', p: 2 }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                      <Typography sx={{ textAlign: 'left' }}>{c.name}</Typography>
+                      {hasSubmitted ? (
+                        <CheckCircleOutlineIcon color="success" />
+                      ) : (
+                        <ErrorOutlineIcon color="warning" />
+                      )}
+                    </Box>
+                  </Button>
+                </Grid>
+              );
+            })}
           </Grid>
 
           {selectedClassId && (

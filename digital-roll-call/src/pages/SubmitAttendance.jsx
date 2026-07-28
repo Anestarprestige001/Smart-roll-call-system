@@ -6,8 +6,7 @@ import {
 } from '@mui/material';
 import EventIcon from '@mui/icons-material/Event';
 import {
-  collection, query, where, getDocs, getDoc, setDoc, serverTimestamp, onSnapshot, doc,
-  Timestamp
+  collection, query, where, getDocs, getDoc, setDoc, serverTimestamp, onSnapshot, doc
 } from 'firebase/firestore';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
@@ -25,7 +24,39 @@ const FIELDS = [
   { key: 'boysDayScholarsAbsent', label: 'Boys Day Scholars Absent', isAbsent: true },
 ];
 
+const ROSTER_FIELDS = [
+  { presentKey: 'girlsBoardersPresent', absentKey: 'girlsBoardersAbsent', rosterKey: 'totalGirlBoarders', label: 'Girls Boarders' },
+  { presentKey: 'girlsDayScholarsPresent', absentKey: 'girlsDayScholarsAbsent', rosterKey: 'totalGirlDayScholars', label: 'Girls Day Scholars' },
+  { presentKey: 'boysBoardersPresent', absentKey: 'boysBoardersAbsent', rosterKey: 'totalBoyBoarders', label: 'Boys Boarders' },
+  { presentKey: 'boysDayScholarsPresent', absentKey: 'boysDayScholarsAbsent', rosterKey: 'totalBoyDayScholars', label: 'Boys Day Scholars' },
+];
+
+const EMPTY_ROSTER_TOTALS = {
+  totalGirlBoarders: 0,
+  totalGirlDayScholars: 0,
+  totalBoyBoarders: 0,
+  totalBoyDayScholars: 0,
+};
+
 const INITIAL_FORM = Object.fromEntries(FIELDS.map((f) => [f.key, '']));
+
+function buildFormData(existingData = null, rosterTotals = EMPTY_ROSTER_TOTALS) {
+  const nextFormData = { ...INITIAL_FORM };
+
+  FIELDS.forEach((field) => {
+    if (existingData && existingData[field.key] !== undefined && existingData[field.key] !== null && existingData[field.key] !== '') {
+      nextFormData[field.key] = existingData[field.key];
+      return;
+    }
+
+    const rosterField = ROSTER_FIELDS.find((item) => item.presentKey === field.key);
+    if (!field.isAbsent && rosterField) {
+      nextFormData[field.key] = String(rosterTotals[rosterField.rosterKey] ?? 0);
+    }
+  });
+
+  return nextFormData;
+}
 
 export default function SubmitAttendance() {
   const [activeTerm, setActiveTerm] = useState(null);
@@ -43,35 +74,12 @@ export default function SubmitAttendance() {
   const [holidayEvent, setHolidayEvent] = useState(null);
   const [loadError, setLoadError] = useState('');
   const [retryToken, setRetryToken] = useState(0);
+  const [rosterTotals, setRosterTotals] = useState(EMPTY_ROSTER_TOTALS);
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (selectedClassId) {
-      const today = new Date().toISOString().split('T')[0];
-      const docId = `${selectedClassId}_${today}`;
-      const docRef = doc(db, 'attendance_logs', docId);
-      getDoc(docRef).then(docSnap => {
-        if (docSnap.exists()) {
-          const existingData = docSnap.data();
-          const newFormData = {};
-          const canPerformEdit = ['ADMIN', 'DIRECTOR', 'ICT COORDINATOR'].includes(userRole) || existingData.submittedByUid === auth.currentUser?.uid;
-          setCanEdit(canPerformEdit);
-
-          FIELDS.forEach(field => {
-            newFormData[field.key] = existingData[field.key] || '';
-          });
-          setFormData(newFormData);
-          setIsEditMode(true);
-        } else {
-          setCanEdit(true);
-          setFormData(INITIAL_FORM);
-          setIsEditMode(false);
-        }
-      });
-    }
     setLoading(true);
     setLoadError('');
-
 
     const promises = [];
     const unsubscribes = [];
@@ -81,14 +89,12 @@ export default function SubmitAttendance() {
       if (!snapshot.empty) {
         setActiveTerm({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
 
-        // After getting active term, check for holidays
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        const todayString = today.toISOString().split('T')[0];
 
         const eventsRef = collection(db, 'terms', snapshot.docs[0].id, 'events');
         const holidayQuery = query(eventsRef, where('type', 'in', ['Holiday', 'Midterm Break', 'Public Holiday']));
-        
+
         return getDocs(holidayQuery).then(eventsSnapshot => {
           for (const eventDoc of eventsSnapshot.docs) {
             const event = eventDoc.data();
@@ -101,7 +107,6 @@ export default function SubmitAttendance() {
             }
           }
         });
-
       }
     }).catch(err => {
       console.error('Error fetching active term:', err);
@@ -150,7 +155,51 @@ export default function SubmitAttendance() {
     return () => {
       unsubscribes.forEach(unsub => unsub());
     };
-  }, [retryToken, selectedClassId, userRole]);
+  }, [retryToken]);
+
+  useEffect(() => {
+    if (!selectedClassId) {
+      return;
+    }
+
+    setLoading(true);
+    setLoadError('');
+
+    const today = new Date().toISOString().split('T')[0];
+    const docId = `${selectedClassId}_${today}`;
+    const docRef = doc(db, 'attendance_logs', docId);
+    const classRef = doc(db, 'classes', selectedClassId);
+
+    getDoc(classRef).then((classSnap) => {
+      const classData = classSnap.exists() ? classSnap.data() : {};
+      const nextRosterTotals = {
+        totalGirlBoarders: Number(classData.totalGirlBoarders ?? 0),
+        totalGirlDayScholars: Number(classData.totalGirlDayScholars ?? 0),
+        totalBoyBoarders: Number(classData.totalBoyBoarders ?? 0),
+        totalBoyDayScholars: Number(classData.totalBoyDayScholars ?? 0),
+      };
+      setRosterTotals(nextRosterTotals);
+
+      return getDoc(docRef).then((docSnap) => {
+        if (docSnap.exists()) {
+          const existingData = docSnap.data();
+          const canPerformEdit = ['ADMIN', 'DIRECTOR', 'ICT COORDINATOR'].includes(userRole) || existingData.submittedByUid === auth.currentUser?.uid;
+          setCanEdit(canPerformEdit);
+          setFormData(buildFormData(existingData, nextRosterTotals));
+          setIsEditMode(true);
+        } else {
+          setCanEdit(true);
+          setFormData(buildFormData(null, nextRosterTotals));
+          setIsEditMode(false);
+        }
+      });
+    }).catch((error) => {
+      console.error('Error loading roster for selected class:', error);
+      setLoadError(prev => prev + ' Unable to load class roster totals.');
+    }).finally(() => {
+      setLoading(false);
+    });
+  }, [selectedClassId, userRole]);
 
   const isClassTeacher = userRole === 'CLASS TEACHER';
 
@@ -177,6 +226,19 @@ export default function SubmitAttendance() {
   const totalStudents = totalPresent + totalAbsent;
 
   const selectedClass = classes.find((item) => item.id === selectedClassId) || null;
+
+  const rosterMismatchDetails = ROSTER_FIELDS.filter((field) => {
+    const rosterTotal = Number(rosterTotals[field.rosterKey] ?? 0);
+    const recordedTotal = num(formData[field.presentKey]) + num(formData[field.absentKey]);
+    return rosterTotal > 0 && recordedTotal !== rosterTotal;
+  }).map((field) => {
+    const rosterTotal = Number(rosterTotals[field.rosterKey] ?? 0);
+    const recordedTotal = num(formData[field.presentKey]) + num(formData[field.absentKey]);
+    const difference = Math.abs(recordedTotal - rosterTotal);
+    return `${field.label}: expected ${rosterTotal}, recorded ${recordedTotal} (off by ${difference})`;
+  });
+
+  const hasRosterMismatch = rosterMismatchDetails.length > 0;
 
   const validate = () => {
     const newErrors = {};
@@ -230,12 +292,19 @@ export default function SubmitAttendance() {
       totalPresent,
       totalAbsent,
       totalStudents,
+      rosterMismatch: hasRosterMismatch,
     };
 
     try {
       const docId = `${selectedClassId}_${today}`;
       await setDoc(doc(db, 'attendance_logs', docId), payload, { merge: isEditMode });
-      setSnackbar({ open: true, message: `Roll call for ${selectedClass?.name || selectedClassId} ${isEditMode ? 'updated' : 'submitted'} successfully!`, severity: 'success' });
+      setSnackbar({
+        open: true,
+        message: hasRosterMismatch
+          ? `Roll call for ${selectedClass?.name || selectedClassId} was submitted with roster mismatches.`
+          : `Roll call for ${selectedClass?.name || selectedClassId} ${isEditMode ? 'updated' : 'submitted'} successfully!`,
+        severity: hasRosterMismatch ? 'warning' : 'success',
+      });
       setTimeout(() => {
         navigate('/');
       }, 1200);
@@ -302,89 +371,107 @@ export default function SubmitAttendance() {
       )}
 
       {!holidayEvent && (
-      <Card elevation={4} sx={{ borderRadius: 3 }}>
-        <CardContent sx={{ p: { xs: 1.5, md: 3 } }}>
-          <Box component="form" onSubmit={handleSubmit} noValidate>
-            {isClassTeacher ? (
-              <Box sx={{ mb: 4, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
-                <Typography variant="h6">Class</Typography>
-                <Typography color="text.secondary">{teacherClassName || (selectedClassId ? 'Loading class name...' : 'No class assigned')}</Typography>
-              </Box>
-            ) : (
-              <FormControl fullWidth sx={{ mb: 4 }}>
-                <InputLabel id="class-label">Select Class</InputLabel>
-                <Select labelId="class-label" value={selectedClassId} label="Select Class" onChange={(event) => setSelectedClassId(event.target.value)}>
-                  {classes.map((classItem) => (
-                    <MenuItem key={classItem.id} value={classItem.id}>{classItem.name}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            )}
-
-            {selectedClass && (
-              <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
-                <Typography variant="h6" color="secondary.main" gutterBottom sx={{ mb: 2 }}>
-                  Attendance Breakdown — {selectedClass.name}
-                </Typography>
-
-                <Typography variant="overline" color="success.main" sx={{ display: 'block', mb: 1 }}>
-                  Students Present
-                </Typography>
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: { xs: 1.5, md: 2 }, mb: 3 }}>
-                  {FIELDS.filter((f) => !f.isAbsent).map(({ key, label }) => (
-                    <TextField key={key} fullWidth label={label} type="number" value={formData[key]} onChange={handleChange(key)} error={!!errors[key]} helperText={errors[key] ? 'Required' : ''} color="success" slotProps={{ input: { inputProps: { min: 0 } } }} disabled={isEditMode && !canEdit} />
-                  ))}
+        <Card elevation={4} sx={{ borderRadius: 3 }}>
+          <CardContent sx={{ p: { xs: 1.5, md: 3 } }}>
+            <Box component="form" onSubmit={handleSubmit} noValidate>
+              {isClassTeacher ? (
+                <Box sx={{ mb: 4, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                  <Typography variant="h6">Class</Typography>
+                  <Typography color="text.secondary">{teacherClassName || (selectedClassId ? 'Loading class name...' : 'No class assigned')}</Typography>
                 </Box>
+              ) : (
+                <FormControl fullWidth sx={{ mb: 4 }}>
+                  <InputLabel id="class-label">Select Class</InputLabel>
+                  <Select labelId="class-label" value={selectedClassId} label="Select Class" onChange={(event) => setSelectedClassId(event.target.value)}>
+                    {classes.map((classItem) => (
+                      <MenuItem key={classItem.id} value={classItem.id}>{classItem.name}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
 
-                <Typography variant="overline" color="error.main" sx={{ display: 'block', mb: 1 }}>
-                  Students Absent
-                </Typography>
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: { xs: 1.5, md: 2 }, mb: 3 }}>
-                  {FIELDS.filter((f) => f.isAbsent).map(({ key, label }) => (
-                    <TextField key={key} fullWidth label={label} type="number" value={formData[key]} onChange={handleChange(key)} error={!!errors[key]} helperText={errors[key] ? 'Required' : ''} color="error" slotProps={{ input: { inputProps: { min: 0 } } }} disabled={isEditMode && !canEdit} />
-                  ))}
-                </Box>
+              {selectedClass && (
+                <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
+                  <Typography variant="h6" color="secondary.main" gutterBottom sx={{ mb: 2 }}>
+                    Attendance Breakdown — {selectedClass.name}
+                  </Typography>
 
-                {isEditMode && !canEdit && (
-                  <Alert severity="warning" sx={{ mb: 2 }}>
-                    This roll call was submitted by another user. Only administrators can edit it.
-                  </Alert>
-                )}
-
-                <Divider sx={{ my: 3 }} />
-
-                <Card variant="outlined" sx={{ mb: 3, borderRadius: 2, bgcolor: 'background.default' }}>
-                  <CardContent>
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      Live Summary
-                    </Typography>
-                    <Stack direction="row" sx={{ justifyContent: 'space-around', alignItems: 'center', textAlign: 'center', py: 1 }}>
-                      <Box>
-                        <Typography variant="overline" color="text.secondary">Total Present</Typography>
-                        <Typography sx={{ fontSize: { xs: '1.5rem', md: '2rem' }, fontWeight: 'bold', color: 'success.main' }}>{totalPresent}</Typography>
+                  {hasRosterMismatch && (
+                    <Alert severity="warning" sx={{ mb: 3 }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                        Roster totals do not match the entered counts.
+                      </Typography>
+                      <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
+                        {rosterMismatchDetails.map((detail) => (
+                          <Box component="li" key={detail} sx={{ mb: 0.5 }}>
+                            {detail}
+                          </Box>
+                        ))}
                       </Box>
-                      <Divider orientation="vertical" flexItem />
-                      <Box>
-                        <Typography variant="overline" color="text.secondary">Total Absent</Typography>
-                        <Typography sx={{ fontSize: { xs: '1.5rem', md: '2rem' }, fontWeight: 'bold', color: 'error.main' }}>{totalAbsent}</Typography>
-                      </Box>
-                      <Divider orientation="vertical" flexItem />
-                      <Box>
-                        <Typography variant="overline" color="text.secondary">Grand Total</Typography>
-                        <Typography sx={{ fontSize: { xs: '1.5rem', md: '2rem' }, fontWeight: 'bold', color: 'primary.main' }}>{totalStudents}</Typography>
-                      </Box>
-                    </Stack>
-                  </CardContent>
-                </Card>
+                      <Typography variant="body2" sx={{ mt: 1 }}>
+                        You can still override and submit this roll call.
+                      </Typography>
+                    </Alert>
+                  )}
 
-                <Button type="submit" variant="contained" color="primary" fullWidth size="large" disabled={isSubmitting || !activeTerm || (isEditMode && !canEdit)} sx={{ py: 1.5, borderRadius: 2, fontSize: '1rem' }}>
-                  {isSubmitting ? <CircularProgress size={24} color="inherit" /> : isEditMode ? 'Update Roll Call' : 'Submit Roll Call'}
-                </Button>
-              </motion.div>
-            )}
-          </Box>
-        </CardContent>
-      </Card>
+                  <Typography variant="overline" color="success.main" sx={{ display: 'block', mb: 1 }}>
+                    Students Present
+                  </Typography>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: { xs: 1.5, md: 2 }, mb: 3 }}>
+                    {FIELDS.filter((f) => !f.isAbsent).map(({ key, label }) => (
+                      <TextField key={key} fullWidth label={label} type="number" value={formData[key]} onChange={handleChange(key)} error={!!errors[key]} helperText={errors[key] ? 'Required' : ''} color="success" slotProps={{ input: { inputProps: { min: 0 } } }} disabled={isEditMode && !canEdit} />
+                    ))}
+                  </Box>
+
+                  <Typography variant="overline" color="error.main" sx={{ display: 'block', mb: 1 }}>
+                    Students Absent
+                  </Typography>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: { xs: 1.5, md: 2 }, mb: 3 }}>
+                    {FIELDS.filter((f) => f.isAbsent).map(({ key, label }) => (
+                      <TextField key={key} fullWidth label={label} type="number" value={formData[key]} onChange={handleChange(key)} error={!!errors[key]} helperText={errors[key] ? 'Required' : ''} color="error" slotProps={{ input: { inputProps: { min: 0 } } }} disabled={isEditMode && !canEdit} />
+                    ))}
+                  </Box>
+
+                  {isEditMode && !canEdit && (
+                    <Alert severity="warning" sx={{ mb: 2 }}>
+                      This roll call was submitted by another user. Only administrators can edit it.
+                    </Alert>
+                  )}
+
+                  <Divider sx={{ my: 3 }} />
+
+                  <Card variant="outlined" sx={{ mb: 3, borderRadius: 2, bgcolor: 'background.default' }}>
+                    <CardContent>
+                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                        Live Summary
+                      </Typography>
+                      <Stack direction="row" sx={{ justifyContent: 'space-around', alignItems: 'center', textAlign: 'center', py: 1 }}>
+                        <Box>
+                          <Typography variant="overline" color="text.secondary">Total Present</Typography>
+                          <Typography sx={{ fontSize: { xs: '1.5rem', md: '2rem' }, fontWeight: 'bold', color: 'success.main' }}>{totalPresent}</Typography>
+                        </Box>
+                        <Divider orientation="vertical" flexItem />
+                        <Box>
+                          <Typography variant="overline" color="text.secondary">Total Absent</Typography>
+                          <Typography sx={{ fontSize: { xs: '1.5rem', md: '2rem' }, fontWeight: 'bold', color: 'error.main' }}>{totalAbsent}</Typography>
+                        </Box>
+                        <Divider orientation="vertical" flexItem />
+                        <Box>
+                          <Typography variant="overline" color="text.secondary">Grand Total</Typography>
+                          <Typography sx={{ fontSize: { xs: '1.5rem', md: '2rem' }, fontWeight: 'bold', color: 'primary.main' }}>{totalStudents}</Typography>
+                        </Box>
+                      </Stack>
+                    </CardContent>
+                  </Card>
+
+                  <Button type="submit" variant="contained" color="primary" fullWidth size="large" disabled={isSubmitting || !activeTerm || (isEditMode && !canEdit)} sx={{ py: 1.5, borderRadius: 2, fontSize: '1rem' }}>
+                    {isSubmitting ? <CircularProgress size={24} color="inherit" /> : isEditMode ? (hasRosterMismatch ? 'Update Roll Call (Override)' : 'Update Roll Call') : (hasRosterMismatch ? 'Submit Roll Call (Override)' : 'Submit Roll Call')}
+                  </Button>
+                </motion.div>
+              )}
+            </Box>
+          </CardContent>
+        </Card>
       )}
 
       <Snackbar open={snackbar.open} autoHideDuration={6000} onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
