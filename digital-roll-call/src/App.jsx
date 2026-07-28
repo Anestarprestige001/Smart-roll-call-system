@@ -13,6 +13,7 @@ import TermManagement from './pages/TermManagement';
 import KitchenRecords from './pages/KitchenRecords';
 import AppLayout from './components/AppLayout';
 import { Box, CircularProgress, Typography } from '@mui/material';
+import { useAppVersionCheck } from './hooks/useAppVersionCheck';
 
 // Placeholder for Stats Page
 function StatsPlaceholder() {
@@ -53,6 +54,8 @@ export default function App() {
   const [user, setUser] = useState(undefined);
   const [userStatus, setUserStatus] = useState(null);
   const [userRole, setUserRole] = useState(null);
+
+  useAppVersionCheck();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
