@@ -11,6 +11,7 @@ import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, writeB
 import { auth, db } from '../../firebase';
 import TermProgressBar from '../TermProgressBar';
 import SchoolCalendar from './SchoolCalendar';
+import { writeNotification } from '../../utils/notifications';
 
 const EMPTY_TERM = { name: '', startDate: '', endDate: '', midtermDate: '' };
 const EMPTY_EVENT = { title: '', startDate: '', endDate: '', type: 'holiday' };
@@ -97,6 +98,18 @@ export default function TermAdminView() {
           createdAt: serverTimestamp()
         });
       }
+
+      await writeNotification({
+        notificationId: `calendar_updated_${Date.now()}`,
+        type: 'calendar_updated',
+        targetRoles: ['ADMIN', 'ICT COORDINATOR'],
+        targetUserIds: [],
+        payload: {
+          title: 'Calendar updated',
+          message: 'The school calendar or term details were updated.',
+        },
+      });
+
       handleCloseTermDialog();
     } catch (err) {
       console.error("Error saving term:", err);
@@ -162,6 +175,18 @@ export default function TermAdminView() {
       } else {
         await addDoc(collection(db, 'schoolEvents'), eventPayload);
       }
+
+      await writeNotification({
+        notificationId: `calendar_updated_${Date.now()}`,
+        type: 'calendar_updated',
+        targetRoles: ['ADMIN', 'ICT COORDINATOR'],
+        targetUserIds: [],
+        payload: {
+          title: 'Calendar updated',
+          message: 'The school calendar or term details were updated.',
+        },
+      });
+
       handleCloseEventDialog();
     } catch (err) {
       console.error('Error saving event:', err);

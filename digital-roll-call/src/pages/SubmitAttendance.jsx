@@ -12,6 +12,8 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { db, auth } from '../firebase';
 import { normalizeClassOptions, getClassesCollectionRef } from '../constants/classes';
+import { getCurrentWeekKey } from '../components/dashboard/teacherDutyHelpers';
+import { writeNotification } from '../utils/notifications';
 
 const FIELDS = [
   { key: 'girlsBoardersPresent', label: 'Girls Boarders Present', isAbsent: false },
@@ -298,6 +300,24 @@ export default function SubmitAttendance() {
     try {
       const docId = `${selectedClassId}_${today}`;
       await setDoc(doc(db, 'attendance_logs', docId), payload, { merge: isEditMode });
+
+      if (!isEditMode) {
+        const weekOf = getCurrentWeekKey();
+        const dutyRosterRef = doc(db, 'dutyRoster', weekOf);
+        const dutyRosterSnap = await getDoc(dutyRosterRef);
+        const onDutyUserIds = dutyRosterSnap.exists() ? (dutyRosterSnap.data().onDutyUserIds || []) : [];
+        await writeNotification({
+          notificationId: `submitted_${selectedClassId}_${today}`,
+          type: 'submitted',
+          targetRoles: ['ADMIN'],
+          targetUserIds: onDutyUserIds,
+          payload: {
+            title: 'Attendance submitted',
+            message: `${selectedClass?.name || selectedClassId} attendance was submitted for ${today}.`,
+          },
+        });
+      }
+
       setSnackbar({
         open: true,
         message: hasRosterMismatch

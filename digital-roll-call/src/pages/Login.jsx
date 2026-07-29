@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, CardContent, Typography, Button, Box, Alert, Avatar } from '@mui/material';
+import { Card, CardContent, Typography, Button, Box, Alert, Avatar, Divider } from '@mui/material';
 import SchoolIcon from '@mui/icons-material/School';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
@@ -45,6 +45,11 @@ const Login = () => {
           <Typography variant="subtitle1" color="text.secondary" gutterBottom sx={{ mb: 2, textAlign: 'center' }}>
             Digital Roll Call System
           </Typography>
+
+          <Alert severity="info" sx={{ width: '100%', mb: 2 }}>
+            Notifications are required for attendance and duty follow-up alerts.
+          </Alert>
+          <Divider sx={{ width: '100%', mb: 2 }} />
 
           {error && (
             <Alert severity="error" sx={{ width: '100%', mb: 2, mt: 1 }}>

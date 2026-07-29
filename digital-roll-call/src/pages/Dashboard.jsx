@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Box, Container, Typography, Button, CircularProgress, Alert, Grid } from '@mui/material';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlined';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutlined';
-import { collection, query, orderBy, onSnapshot, doc } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, doc, getDoc, getDocs, where } from 'firebase/firestore';
 import { onIdTokenChanged } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { getClassesCollectionRef, normalizeClassOptions } from '../constants/classes';
@@ -14,6 +14,7 @@ import TeachersOnDutyChecklist from '../components/dashboard/TeachersOnDutyCheck
 import TeachersOnDutyList from '../components/dashboard/TeachersOnDutyList';
 import { getCurrentWeekKey } from '../components/dashboard/teacherDutyHelpers';
 import { useTodaysAttendanceStatus } from '../hooks/useTodaysAttendanceStatus';
+import { writeNotification } from '../utils/notifications';
 
 const EMPTY_TERM = { name: '', startDate: '', endDate: '', midtermDate: '' };
 
@@ -118,6 +119,49 @@ export default function Dashboard() {
 
     return () => unsubscribeDutyRoster();
   }, [currentUserUid]);
+
+  useEffect(() => {
+    const shouldRunMissingCheck = ['ADMIN', 'ICT COORDINATOR'].includes(role) || isOnDutyTeacher;
+    if (!shouldRunMissingCheck) {
+      return;
+    }
+
+    const now = new Date();
+    const isPastThreshold = now.getHours() > 8 || (now.getHours() === 8 && now.getMinutes() >= 50);
+    if (!isPastThreshold) {
+      return;
+    }
+
+    const today = now.toISOString().split('T')[0];
+    const weekOf = getCurrentWeekKey(now);
+    const dutyRosterRef = doc(db, 'dutyRoster', weekOf);
+
+    const runMissingCheck = async () => {
+      const dutyRosterSnap = await getDoc(dutyRosterRef);
+      const onDutyUserIds = dutyRosterSnap.exists() ? (dutyRosterSnap.data().onDutyUserIds || []) : [];
+      const classSnap = await getDocs(getClassesCollectionRef(db));
+      for (const classDoc of classSnap.docs) {
+        const attendanceRef = doc(db, 'attendance_logs', `${classDoc.id}_${today}`);
+        const attendanceSnap = await getDoc(attendanceRef);
+        if (!attendanceSnap.exists()) {
+          await writeNotification({
+            notificationId: `missing_${classDoc.id}_${today}`,
+            type: 'missing',
+            targetRoles: ['ADMIN'],
+            targetUserIds: onDutyUserIds,
+            payload: {
+              title: 'Missing attendance',
+              message: `${classDoc.data().name || classDoc.id} has no attendance log for ${today}.`,
+            },
+          });
+        }
+      }
+    };
+
+    runMissingCheck().catch((error) => {
+      console.error('Error checking for missing attendance notifications:', error);
+    });
+  }, [role, isOnDutyTeacher]);
 
   if (loading) {
     return (

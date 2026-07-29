@@ -12,6 +12,9 @@ import ClassRosterManagement from './pages/ClassRosterManagement';
 import TermManagement from './pages/TermManagement';
 import KitchenRecords from './pages/KitchenRecords';
 import AppLayout from './components/AppLayout';
+import NotificationPermissionGate from './components/NotificationPermissionGate';
+import Welfare from './pages/Welfare';
+import Notifications from './pages/Notifications';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import { useAppVersionCheck } from './hooks/useAppVersionCheck';
 
@@ -36,9 +39,11 @@ function ProtectedRoute({ user, userStatus, userRole }) {
 
   if (userStatus === 'active' && userRole) {
     return (
-      <AppLayout userRole={userRole}>
-        <Outlet />
-      </AppLayout>
+      <NotificationPermissionGate>
+        <AppLayout userRole={userRole}>
+          <Outlet />
+        </AppLayout>
+      </NotificationPermissionGate>
     );
   }
 
@@ -95,6 +100,8 @@ export default function App() {
           <Route path="/term-management" element={<TermManagement />} />
           <Route path="/stats" element={<StatsPlaceholder />} />
           <Route path="/kitchen-records" element={<KitchenRecords />} />
+          <Route path="/welfare" element={<Welfare />} />
+          <Route path="/notifications" element={<Notifications />} />
         </Route>
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>

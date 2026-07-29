@@ -24,6 +24,13 @@ service cloud.firestore {
       return isSignedIn() && callerExists() && callerData().role == role;
     }
 
+    function isRecipientForNotification() {
+      return isSignedIn() && (
+        request.auth.uid in resource.data.recipientKeys ||
+        callerData().role in resource.data.recipientKeys
+      );
+    }
+
    function callerClassId() {
      return callerExists() ? callerData().get('assignedClassId', callerData().get('classId', null)) : null;
     }
@@ -174,12 +181,31 @@ service cloud.firestore {
     }
     
     match /schoolEvents/{eventId} {
-  allow read: if isSignedIn();
-  allow create, update, delete: if isSignedIn() && (
-    hasRole('DIRECTOR') ||
-    hasRole('ADMIN') ||
-    hasRole('ICT COORDINATOR')
-  );
-}
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && (
+        hasRole('DIRECTOR') ||
+        hasRole('ADMIN') ||
+        hasRole('ICT COORDINATOR')
+      );
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isRecipientForNotification() || hasRole('ADMIN') || hasRole('ICT COORDINATOR');
+      allow create: if isSignedIn() &&
+        request.resource.data.recipientKeys is list &&
+        request.resource.data.recipientKeys.size() > 0 &&
+        request.resource.data.read == false &&
+        request.resource.data.createdAt is timestamp &&
+        request.resource.data.createdAt == request.time;
+      allow update: if isSignedIn() && (
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']) && isRecipientForNotification()) || (
+          hasRole('ADMIN') || hasRole('ICT COORDINATOR')
+        )
+      );
+      allow delete: if isSignedIn() && (
+        hasRole('ADMIN') ||
+        hasRole('ICT COORDINATOR')
+      );
+    }
   }
 }
