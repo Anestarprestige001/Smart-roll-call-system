@@ -256,15 +256,17 @@ function AppLayout({ userRole, children }) {
       <AppBar position="fixed" color="inherit" elevation={1} sx={{ top: 0, zIndex: (theme) => theme.zIndex.drawer + 1 }}>
         <Toolbar sx={{ justifyContent: 'space-between' }}>
           {location.pathname === '/notifications' ? (
-            <IconButton color="inherit" onClick={handleBack} aria-label="Go back">
-              <ArrowBackIcon />
-            </IconButton>
+            <>
+              <IconButton color="inherit" onClick={handleBack} aria-label="Go back">
+                <ArrowBackIcon />
+              </IconButton>
+              <Typography variant="subtitle1" fontWeight={700} color="text.primary">
+                Notifications
+              </Typography>
+            </>
           ) : (
             <Typography variant="h6" fontWeight={700} color="primary">Smart Roll Call</Typography>
           )}
-          <Typography variant="subtitle1" fontWeight={700} color="text.primary">
-            {location.pathname === '/notifications' ? 'Notifications' : 'Smart Roll Call'}
-          </Typography>
           <IconButton color="inherit" onClick={handleBellClick} aria-label="Open notifications">
             <Badge badgeContent={unreadCount} color="error" overlap="circular" invisible={unreadCount === 0}>
               <NotificationsIcon />
