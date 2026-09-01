@@ -12,7 +12,6 @@ import ClassRosterManagement from './pages/ClassRosterManagement';
 import TermManagement from './pages/TermManagement';
 import KitchenRecords from './pages/KitchenRecords';
 import AppLayout from './components/AppLayout';
-import NotificationPermissionGate from './components/NotificationPermissionGate';
 import Welfare from './pages/Welfare';
 import Notifications from './pages/Notifications';
 import { Box, CircularProgress, Typography } from '@mui/material';
@@ -39,11 +38,9 @@ function ProtectedRoute({ user, userStatus, userRole }) {
 
   if (userStatus === 'active' && userRole) {
     return (
-      <NotificationPermissionGate>
-        <AppLayout userRole={userRole}>
-          <Outlet />
-        </AppLayout>
-      </NotificationPermissionGate>
+      <AppLayout userRole={userRole}>
+        <Outlet />
+      </AppLayout>
     );
   }
 

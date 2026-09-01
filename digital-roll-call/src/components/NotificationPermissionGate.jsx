@@ -1,21 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import {
-  Box,
-  Button,
-  CircularProgress,
-  Dialog,
-  Stack,
-  Typography,
-} from '@mui/material';
+import { Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography } from '@mui/material';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
-import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
+import CloseIcon from '@mui/icons-material/Close';
 
 function NotificationPermissionGate({ children }) {
   const [permissionState, setPermissionState] = useState('checking');
+  const [open, setOpen] = useState(true);
 
-  const checkPermission = () => {
+  useEffect(() => {
     if (typeof window === 'undefined' || !('Notification' in window)) {
-      console.warn('Notification API is not supported in this browser; proceeding without the permission gate.');
+      console.warn('Notification API is not supported in this browser; continuing without notification prompts.');
       setPermissionState('unsupported');
       return;
     }
@@ -23,20 +17,21 @@ function NotificationPermissionGate({ children }) {
     const currentPermission = Notification.permission;
     if (currentPermission === 'granted') {
       setPermissionState('granted');
-    } else if (currentPermission === 'denied') {
-      setPermissionState('denied');
-    } else {
-      setPermissionState('default');
+      setOpen(false);
+      return;
     }
-  };
 
-  useEffect(() => {
-    checkPermission();
+    if (currentPermission === 'denied') {
+      setPermissionState('denied');
+      return;
+    }
+
+    setPermissionState('default');
   }, []);
 
   const handleRequestPermission = async () => {
     if (typeof window === 'undefined' || !('Notification' in window)) {
-      console.warn('Notification API is not supported in this browser; proceeding without the permission gate.');
+      console.warn('Notification API is not supported in this browser; continuing without notification prompts.');
       setPermissionState('unsupported');
       return;
     }
@@ -44,85 +39,45 @@ function NotificationPermissionGate({ children }) {
     const result = await Notification.requestPermission();
     if (result === 'granted') {
       setPermissionState('granted');
-    } else if (result === 'denied') {
-      setPermissionState('denied');
-    } else {
-      setPermissionState('default');
+      setOpen(false);
+      return;
     }
+
+    setPermissionState(result === 'denied' ? 'denied' : 'default');
   };
 
-  if (permissionState === 'granted' || permissionState === 'unsupported') {
+  if (permissionState === 'granted' || permissionState === 'unsupported' || permissionState === 'checking') {
     return children;
   }
 
-  if (permissionState === 'checking') {
-    return (
-      <Box
-        sx={{
-          minHeight: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          bgcolor: 'background.default',
-        }}
-      >
-        <CircularProgress />
-      </Box>
-    );
-  }
-
   return (
-    <Dialog open fullScreen disableEscapeKeyDown onClose={() => {}}>
-      <Box
-        sx={{
-          minHeight: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          bgcolor: 'background.default',
-          p: 3,
-        }}
-      >
-        <Box
-          sx={{
-            width: '100%',
-            maxWidth: 480,
-            bgcolor: 'background.paper',
-            borderRadius: 3,
-            boxShadow: 4,
-            p: { xs: 3, sm: 4 },
-          }}
-        >
-          <Stack spacing={2} alignItems="center" textAlign="center">
-            {permissionState === 'default' ? (
-              <NotificationsActiveIcon color="primary" sx={{ fontSize: 48 }} />
-            ) : (
-              <LockOutlinedIcon color="warning" sx={{ fontSize: 48 }} />
-            )}
-
-            <Typography variant="h5" fontWeight={700}>
-              {permissionState === 'default' ? 'Enable notifications' : 'Notifications are blocked'}
-            </Typography>
-
-            <Typography color="text.secondary">
-              {permissionState === 'default'
-                ? 'Notifications are required for attendance and duty follow-up alerts. Please allow them so the app can reach you when it matters.'
-                : 'Notifications were blocked in your browser. Please re-enable them for this site in your browser settings, then try again.'}
-            </Typography>
-
-            {permissionState === 'default' ? (
-              <Button variant="contained" onClick={handleRequestPermission} sx={{ width: '100%' }}>
-                Allow Notifications
-              </Button>
-            ) : (
-              <Button variant="contained" onClick={checkPermission} sx={{ width: '100%' }}>
-                Check Again
-              </Button>
-            )}
+    <>
+      {children}
+      <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <NotificationsActiveIcon color="primary" />
+            <Typography variant="h6">Optional notifications</Typography>
           </Stack>
-        </Box>
-      </Box>
-    </Dialog>
+          <Button onClick={() => setOpen(false)} size="small" aria-label="Dismiss notification prompt">
+            <CloseIcon fontSize="small" />
+          </Button>
+        </DialogTitle>
+        <DialogContent>
+          <Typography color="text.secondary">
+            Browser notifications are optional. You can continue using the app without them, and you can enable them later from your browser settings if you want alerts.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, pt: 0, gap: 1, justifyContent: 'flex-end' }}>
+          <Button onClick={() => setOpen(false)} variant="text">
+            Continue without notifications
+          </Button>
+          <Button onClick={handleRequestPermission} variant="contained">
+            Allow notifications
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 }
 

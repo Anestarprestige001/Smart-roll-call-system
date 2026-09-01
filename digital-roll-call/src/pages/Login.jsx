@@ -46,9 +46,6 @@ const Login = () => {
             Digital Roll Call System
           </Typography>
 
-          <Alert severity="info" sx={{ width: '100%', mb: 2 }}>
-            Notifications are required for attendance and duty follow-up alerts.
-          </Alert>
           <Divider sx={{ width: '100%', mb: 2 }} />
 
           {error && (
