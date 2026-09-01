@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Box, Card, CardContent, Typography, Button, TextField,
   Select, InputLabel, FormControl, Alert, Chip,
-  Snackbar, CircularProgress, Divider, Stack, MenuItem
+  Snackbar, CircularProgress, Divider, Stack, MenuItem, Checkbox, FormControlLabel
 } from '@mui/material';
 import EventIcon from '@mui/icons-material/Event';
 import {
@@ -77,7 +77,11 @@ export default function SubmitAttendance() {
   const [loadError, setLoadError] = useState('');
   const [retryToken, setRetryToken] = useState(0);
   const [rosterTotals, setRosterTotals] = useState(EMPTY_ROSTER_TOTALS);
+  const [allPresentChecked, setAllPresentChecked] = useState(true);
   const navigate = useNavigate();
+
+  // Check if class has valid roster totals
+  const hasValidRoster = Object.values(rosterTotals).some(val => val > 0);
 
   useEffect(() => {
     setLoading(true);
@@ -189,10 +193,14 @@ export default function SubmitAttendance() {
           setCanEdit(canPerformEdit);
           setFormData(buildFormData(existingData, nextRosterTotals));
           setIsEditMode(true);
+          // When in edit mode, don't override to "all present" - keep the saved state
+          setAllPresentChecked(false);
         } else {
           setCanEdit(true);
           setFormData(buildFormData(null, nextRosterTotals));
           setIsEditMode(false);
+          // Default to "all present" for new submissions
+          setAllPresentChecked(true);
         }
       });
     }).catch((error) => {
@@ -214,8 +222,45 @@ export default function SubmitAttendance() {
 
   const handleChange = (key) => (e) => {
     const raw = e.target.value;
+    
+    if (hasValidRoster && !allPresentChecked) {
+      // In roster-driven mode with "All Present" unchecked
+      const absentField = ROSTER_FIELDS.find(f => f.absentKey === key);
+      if (absentField) {
+        // This is an absent field - validate and update
+        const absentValue = parseInt(raw, 10);
+        const rosterTotal = rosterTotals[absentField.rosterKey] ?? 0;
+        
+        // Clear error for this field if it was previously set
+        if (errors[key]) setErrors((prev) => ({ ...prev, [key]: false }));
+        
+        // Validate absent doesn't exceed roster
+        if (!isNaN(absentValue) && absentValue > rosterTotal) {
+          setErrors((prev) => ({ ...prev, [key]: true }));
+        }
+        
+        setFormData((prev) => ({ ...prev, [key]: raw }));
+        return;
+      }
+    }
+    
     setFormData((prev) => ({ ...prev, [key]: raw }));
     if (errors[key]) setErrors((prev) => ({ ...prev, [key]: false }));
+  };
+
+  const handleAllPresentChange = (e) => {
+    const checked = e.target.checked;
+    setAllPresentChecked(checked);
+    
+    if (checked && hasValidRoster) {
+      // When "All Present" is checked, set absent fields to 0
+      const newFormData = { ...formData };
+      ROSTER_FIELDS.forEach(field => {
+        newFormData[field.absentKey] = '0';
+      });
+      setFormData(newFormData);
+      setErrors({});
+    }
   };
 
   const num = (v) => {
@@ -223,32 +268,57 @@ export default function SubmitAttendance() {
     return isNaN(n) ? 0 : Math.max(0, n);
   };
 
-  const totalPresent = num(formData.girlsBoardersPresent) + num(formData.girlsDayScholarsPresent) + num(formData.boysBoardersPresent) + num(formData.boysDayScholarsPresent);
-  const totalAbsent = num(formData.girlsBoardersAbsent) + num(formData.girlsDayScholarsAbsent) + num(formData.boysBoardersAbsent) + num(formData.boysDayScholarsAbsent);
+  // Compute present values if in roster-driven mode with "All Present" unchecked
+  const computedFormData = { ...formData };
+  if (hasValidRoster && !allPresentChecked) {
+    ROSTER_FIELDS.forEach(field => {
+      const rosterTotal = rosterTotals[field.rosterKey] ?? 0;
+      const absentEntered = num(formData[field.absentKey]);
+      const computed = Math.max(0, rosterTotal - absentEntered);
+      computedFormData[field.presentKey] = String(computed);
+    });
+  } else if (hasValidRoster && allPresentChecked) {
+    // When "All Present" is checked, set all present to roster totals and absent to 0
+    ROSTER_FIELDS.forEach(field => {
+      const rosterTotal = rosterTotals[field.rosterKey] ?? 0;
+      computedFormData[field.presentKey] = String(rosterTotal);
+      computedFormData[field.absentKey] = '0';
+    });
+  }
+
+  const totalPresent = num(computedFormData.girlsBoardersPresent) + num(computedFormData.girlsDayScholarsPresent) + num(computedFormData.boysBoardersPresent) + num(computedFormData.boysDayScholarsPresent);
+  const totalAbsent = num(computedFormData.girlsBoardersAbsent) + num(computedFormData.girlsDayScholarsAbsent) + num(computedFormData.boysBoardersAbsent) + num(computedFormData.boysDayScholarsAbsent);
   const totalStudents = totalPresent + totalAbsent;
 
   const selectedClass = classes.find((item) => item.id === selectedClassId) || null;
 
-  const rosterMismatchDetails = ROSTER_FIELDS.filter((field) => {
-    const rosterTotal = Number(rosterTotals[field.rosterKey] ?? 0);
-    const recordedTotal = num(formData[field.presentKey]) + num(formData[field.absentKey]);
-    return rosterTotal > 0 && recordedTotal !== rosterTotal;
-  }).map((field) => {
-    const rosterTotal = Number(rosterTotals[field.rosterKey] ?? 0);
-    const recordedTotal = num(formData[field.presentKey]) + num(formData[field.absentKey]);
-    const difference = Math.abs(recordedTotal - rosterTotal);
-    return `${field.label}: expected ${rosterTotal}, recorded ${recordedTotal} (off by ${difference})`;
-  });
-
-  const hasRosterMismatch = rosterMismatchDetails.length > 0;
-
   const validate = () => {
     const newErrors = {};
-    FIELDS.forEach(({ key }) => {
-      const v = formData[key];
-      if (v === '' || v === null || v === undefined) newErrors[key] = true;
-      else if (parseInt(v, 10) < 0) newErrors[key] = true;
-    });
+    
+    if (hasValidRoster && !allPresentChecked) {
+      // In roster-driven mode: only validate absent fields are filled and don't exceed roster
+      ROSTER_FIELDS.forEach(field => {
+        const absentValue = num(formData[field.absentKey]);
+        const rosterTotal = rosterTotals[field.rosterKey] ?? 0;
+        
+        if (formData[field.absentKey] === '' || formData[field.absentKey] === null || formData[field.absentKey] === undefined) {
+          newErrors[field.absentKey] = true;
+        } else if (absentValue < 0 || absentValue > rosterTotal) {
+          newErrors[field.absentKey] = true;
+        }
+      });
+    } else if (hasValidRoster && allPresentChecked) {
+      // All present is checked - no validation errors needed, auto-fill will handle it
+      // Just clear any previous errors
+    } else {
+      // No valid roster or legacy mode: validate all 8 fields
+      FIELDS.forEach(({ key }) => {
+        const v = formData[key];
+        if (v === '' || v === null || v === undefined) newErrors[key] = true;
+        else if (parseInt(v, 10) < 0) newErrors[key] = true;
+      });
+    }
+    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -283,18 +353,17 @@ export default function SubmitAttendance() {
       lastEditedAt: null,
       date: today,
       termId: activeTerm.id,
-      girlsBoardersPresent: num(formData.girlsBoardersPresent),
-      girlsDayScholarsPresent: num(formData.girlsDayScholarsPresent),
-      boysBoardersPresent: num(formData.boysBoardersPresent),
-      boysDayScholarsPresent: num(formData.boysDayScholarsPresent),
-      girlsBoardersAbsent: num(formData.girlsBoardersAbsent),
-      girlsDayScholarsAbsent: num(formData.girlsDayScholarsAbsent),
-      boysBoardersAbsent: num(formData.boysBoardersAbsent),
-      boysDayScholarsAbsent: num(formData.boysDayScholarsAbsent),
+      girlsBoardersPresent: num(computedFormData.girlsBoardersPresent),
+      girlsDayScholarsPresent: num(computedFormData.girlsDayScholarsPresent),
+      boysBoardersPresent: num(computedFormData.boysBoardersPresent),
+      boysDayScholarsPresent: num(computedFormData.boysDayScholarsPresent),
+      girlsBoardersAbsent: num(computedFormData.girlsBoardersAbsent),
+      girlsDayScholarsAbsent: num(computedFormData.girlsDayScholarsAbsent),
+      boysBoardersAbsent: num(computedFormData.boysBoardersAbsent),
+      boysDayScholarsAbsent: num(computedFormData.boysDayScholarsAbsent),
       totalPresent,
       totalAbsent,
       totalStudents,
-      rosterMismatch: hasRosterMismatch,
     };
 
     try {
@@ -320,10 +389,8 @@ export default function SubmitAttendance() {
 
       setSnackbar({
         open: true,
-        message: hasRosterMismatch
-          ? `Roll call for ${selectedClass?.name || selectedClassId} was submitted with roster mismatches.`
-          : `Roll call for ${selectedClass?.name || selectedClassId} ${isEditMode ? 'updated' : 'submitted'} successfully!`,
-        severity: hasRosterMismatch ? 'warning' : 'success',
+        message: `Roll call for ${selectedClass?.name || selectedClassId} ${isEditMode ? 'updated' : 'submitted'} successfully!`,
+        severity: 'success',
       });
       setTimeout(() => {
         navigate('/');
@@ -416,41 +483,94 @@ export default function SubmitAttendance() {
                     Attendance Breakdown — {selectedClass.name}
                   </Typography>
 
-                  {hasRosterMismatch && (
-                    <Alert severity="warning" sx={{ mb: 3 }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
-                        Roster totals do not match the entered counts.
-                      </Typography>
-                      <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
-                        {rosterMismatchDetails.map((detail) => (
-                          <Box component="li" key={detail} sx={{ mb: 0.5 }}>
-                            {detail}
+
+
+                  {/* ROSTER-DRIVEN MODE: Only show for classes with valid roster totals */}
+                  {hasValidRoster ? (
+                    <>
+                      {/* "All Present" Checkbox */}
+                      <Card sx={{ mb: 3, p: 2, bgcolor: 'info.light', borderLeft: '4px solid', borderLeftColor: 'info.main' }}>
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              checked={allPresentChecked}
+                              onChange={handleAllPresentChange}
+                              disabled={isEditMode && !canEdit}
+                            />
+                          }
+                          label={
+                            <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                              All Present
+                            </Typography>
+                          }
+                        />
+                        <Typography variant="caption" color="text.secondary" sx={{ ml: 4, display: 'block', mt: -1 }}>
+                          When checked, all students will be marked as present. Uncheck to manually enter absences.
+                        </Typography>
+                      </Card>
+
+                      {/* Show only absent fields when "All Present" is unchecked */}
+                      {!allPresentChecked ? (
+                        <Box>
+                          <Typography variant="overline" color="error.main" sx={{ display: 'block', mb: 2, fontWeight: 'bold' }}>
+                            Enter Absences (Computed Present = Roster − Absent)
+                          </Typography>
+                          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: { xs: 1.5, md: 2 }, mb: 3 }}>
+                            {ROSTER_FIELDS.map((field) => {
+                              const rosterTotal = rosterTotals[field.rosterKey] ?? 0;
+                              const absentEntered = num(formData[field.absentKey]);
+                              const computedPresent = Math.max(0, rosterTotal - absentEntered);
+                              const exceedsRoster = absentEntered > rosterTotal && formData[field.absentKey] !== '';
+                              
+                              return (
+                                <Box key={field.absentKey}>
+                                  <TextField
+                                    fullWidth
+                                    label={`${field.label} Absent`}
+                                    type="number"
+                                    value={formData[field.absentKey]}
+                                    onChange={handleChange(field.absentKey)}
+                                    error={!!errors[field.absentKey] || exceedsRoster}
+                                    helperText={
+                                      exceedsRoster
+                                        ? `Cannot exceed roster total of ${rosterTotal}`
+                                        : errors[field.absentKey]
+                                        ? 'Required'
+                                        : `Roster: ${rosterTotal} | Present: ${computedPresent}`
+                                    }
+                                    color="error"
+                                    slotProps={{ input: { inputProps: { min: 0, max: rosterTotal } } }}
+                                    disabled={isEditMode && !canEdit}
+                                  />
+                                </Box>
+                              );
+                            })}
                           </Box>
+                        </Box>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      {/* LEGACY MODE: Show all 8 fields for classes without valid roster */}
+                      <Typography variant="overline" color="success.main" sx={{ display: 'block', mb: 1 }}>
+                        Students Present
+                      </Typography>
+                      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: { xs: 1.5, md: 2 }, mb: 3 }}>
+                        {FIELDS.filter((f) => !f.isAbsent).map(({ key, label }) => (
+                          <TextField key={key} fullWidth label={label} type="number" value={formData[key]} onChange={handleChange(key)} error={!!errors[key]} helperText={errors[key] ? 'Required' : ''} color="success" slotProps={{ input: { inputProps: { min: 0 } } }} disabled={isEditMode && !canEdit} />
                         ))}
                       </Box>
-                      <Typography variant="body2" sx={{ mt: 1 }}>
-                        You can still override and submit this roll call.
+
+                      <Typography variant="overline" color="error.main" sx={{ display: 'block', mb: 1 }}>
+                        Students Absent
                       </Typography>
-                    </Alert>
+                      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: { xs: 1.5, md: 2 }, mb: 3 }}>
+                        {FIELDS.filter((f) => f.isAbsent).map(({ key, label }) => (
+                          <TextField key={key} fullWidth label={label} type="number" value={formData[key]} onChange={handleChange(key)} error={!!errors[key]} helperText={errors[key] ? 'Required' : ''} color="error" slotProps={{ input: { inputProps: { min: 0 } } }} disabled={isEditMode && !canEdit} />
+                        ))}
+                      </Box>
+                    </>
                   )}
-
-                  <Typography variant="overline" color="success.main" sx={{ display: 'block', mb: 1 }}>
-                    Students Present
-                  </Typography>
-                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: { xs: 1.5, md: 2 }, mb: 3 }}>
-                    {FIELDS.filter((f) => !f.isAbsent).map(({ key, label }) => (
-                      <TextField key={key} fullWidth label={label} type="number" value={formData[key]} onChange={handleChange(key)} error={!!errors[key]} helperText={errors[key] ? 'Required' : ''} color="success" slotProps={{ input: { inputProps: { min: 0 } } }} disabled={isEditMode && !canEdit} />
-                    ))}
-                  </Box>
-
-                  <Typography variant="overline" color="error.main" sx={{ display: 'block', mb: 1 }}>
-                    Students Absent
-                  </Typography>
-                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: { xs: 1.5, md: 2 }, mb: 3 }}>
-                    {FIELDS.filter((f) => f.isAbsent).map(({ key, label }) => (
-                      <TextField key={key} fullWidth label={label} type="number" value={formData[key]} onChange={handleChange(key)} error={!!errors[key]} helperText={errors[key] ? 'Required' : ''} color="error" slotProps={{ input: { inputProps: { min: 0 } } }} disabled={isEditMode && !canEdit} />
-                    ))}
-                  </Box>
 
                   {isEditMode && !canEdit && (
                     <Alert severity="warning" sx={{ mb: 2 }}>
@@ -485,7 +605,7 @@ export default function SubmitAttendance() {
                   </Card>
 
                   <Button type="submit" variant="contained" color="primary" fullWidth size="large" disabled={isSubmitting || !activeTerm || (isEditMode && !canEdit)} sx={{ py: 1.5, borderRadius: 2, fontSize: '1rem' }}>
-                    {isSubmitting ? <CircularProgress size={24} color="inherit" /> : isEditMode ? (hasRosterMismatch ? 'Update Roll Call (Override)' : 'Update Roll Call') : (hasRosterMismatch ? 'Submit Roll Call (Override)' : 'Submit Roll Call')}
+                    {isSubmitting ? <CircularProgress size={24} color="inherit" /> : isEditMode ? 'Update Roll Call' : 'Submit Roll Call'}
                   </Button>
                 </motion.div>
               )}
