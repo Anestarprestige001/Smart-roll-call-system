@@ -79,6 +79,7 @@ export default function SubmitAttendance() {
   const [rosterTotals, setRosterTotals] = useState(EMPTY_ROSTER_TOTALS);
   const [allPresentChecked, setAllPresentChecked] = useState(null);
   const [previousSubmission, setPreviousSubmission] = useState(null);
+  const [showEditForm, setShowEditForm] = useState(false);
   const navigate = useNavigate();
 
   // Check if class has valid roster totals
@@ -194,6 +195,7 @@ export default function SubmitAttendance() {
           setCanEdit(canPerformEdit);
           setFormData(buildFormData(existingData, nextRosterTotals));
           setIsEditMode(true);
+          setShowEditForm(false);
           setPreviousSubmission({
             submittedBy: existingData.submittedBy || 'Unknown',
             timestamp: existingData.timestamp,
@@ -424,13 +426,15 @@ export default function SubmitAttendance() {
         message: `Roll call for ${selectedClass?.name || selectedClassId} ${isEditMode ? 'updated' : 'submitted'} successfully!`,
         severity: 'success',
       });
+      // Keep isSubmitting true until redirect to prevent duplicate submits
       setTimeout(() => {
         navigate('/');
       }, 1200);
     } catch (err) {
       console.error('Submit error:', err);
-      setSnackbar({ open: true, message: 'Failed to submit attendance. Try again.', severity: 'error' });
-    } finally {
+      const message = err?.message || err?.code || 'Failed to submit attendance. Try again.';
+      setSnackbar({ open: true, message, severity: 'error' });
+      // allow retry
       setIsSubmitting(false);
     }
   };
@@ -516,137 +520,151 @@ export default function SubmitAttendance() {
                   </Typography>
 
                   {isEditMode && previousSubmission && (
-                    <Alert severity="info" sx={{ mb: 3 }}>
+                    <Alert
+                      severity="info"
+                      sx={{ mb: 3 }}
+                      action={
+                        canEdit && !showEditForm ? (
+                          <Button color="inherit" size="small" onClick={() => setShowEditForm(true)}>
+                            Edit
+                          </Button>
+                        ) : null
+                      }
+                    >
                       Attendance for {selectedClass.name} was already submitted today by {previousSubmission.submittedBy} at {formatSubmittedAt(previousSubmission.timestamp)}.
                     </Alert>
                   )}
 
-                  {/* ROSTER-DRIVEN MODE: Only show for classes with valid roster totals */}
-                  {hasValidRoster ? (
-                    <>
-                      <Box sx={{ mb: 3 }}>
-                        <Typography variant="body1" fontWeight={700} color="text.primary" sx={{ mb: 1.5 }}>
-                          Is everyone in {selectedClass.name} here today?
-                        </Typography>
-                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                          <Button
-                            variant={allPresentChecked === true ? 'contained' : 'outlined'}
-                            color="primary"
-                            onClick={() => handleAttendanceOptionSelect(true)}
-                            disabled={isEditMode && !canEdit}
-                            sx={{ flex: 1, py: 1.25, borderRadius: 2, fontWeight: 700 }}
-                          >
-                            All Present
-                          </Button>
-                          <Button
-                            variant={allPresentChecked === false ? 'contained' : 'outlined'}
-                            color="secondary"
-                            onClick={() => handleAttendanceOptionSelect(false)}
-                            disabled={isEditMode && !canEdit}
-                            sx={{ flex: 1, py: 1.25, borderRadius: 2, fontWeight: 700 }}
-                          >
-                            Some Students Are Absent
-                          </Button>
-                        </Stack>
-                      </Box>
-
-                      {allPresentChecked === false ? (
-                        <Box>
-                          <Typography variant="overline" color="error.main" sx={{ display: 'block', mb: 2, fontWeight: 'bold' }}>
-                            Tell us who is away today
-                          </Typography>
-                          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: { xs: 1.5, md: 2 }, mb: 3 }}>
-                            {ROSTER_FIELDS.map((field) => {
-                              const rosterTotal = rosterTotals[field.rosterKey] ?? 0;
-                              const absentEntered = num(formData[field.absentKey]);
-                              const computedPresent = Math.max(0, rosterTotal - absentEntered);
-                              const exceedsRoster = absentEntered > rosterTotal && formData[field.absentKey] !== '';
-                              
-                              return (
-                                <Box key={field.absentKey}>
-                                  <TextField
-                                    fullWidth
-                                    label={`${field.label} — how many are away today?`}
-                                    type="number"
-                                    value={formData[field.absentKey]}
-                                    onChange={handleChange(field.absentKey)}
-                                    error={!!errors[field.absentKey] || exceedsRoster}
-                                    helperText={
-                                      exceedsRoster
-                                        ? `Cannot exceed roster total of ${rosterTotal}`
-                                        : errors[field.absentKey]
-                                        ? 'Required'
-                                        : `Roster: ${rosterTotal} | Present: ${computedPresent}`
-                                    }
-                                    color="error"
-                                    slotProps={{ input: { inputProps: { min: 0, max: rosterTotal } } }}
-                                    disabled={isEditMode && !canEdit}
-                                  />
-                                </Box>
-                              );
-                            })}
+                  {(!isEditMode || showEditForm) && (
+                    <div>
+                      {/* ROSTER-DRIVEN MODE: Only show for classes with valid roster totals */}
+                      {hasValidRoster ? (
+                        <div>
+                          <Box sx={{ mb: 3 }}>
+                            <Typography variant="body1" fontWeight={700} color="text.primary" sx={{ mb: 1.5 }}>
+                              Is everyone in {selectedClass.name} here today?
+                            </Typography>
+                            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                              <Button
+                                variant={allPresentChecked === true ? 'contained' : 'outlined'}
+                                color="primary"
+                                onClick={() => handleAttendanceOptionSelect(true)}
+                                disabled={isEditMode && !canEdit}
+                                sx={{ flex: 1, py: 1.25, borderRadius: 2, fontWeight: 700 }}
+                              >
+                                All Present
+                              </Button>
+                              <Button
+                                variant={allPresentChecked === false ? 'contained' : 'outlined'}
+                                color="secondary"
+                                onClick={() => handleAttendanceOptionSelect(false)}
+                                disabled={isEditMode && !canEdit}
+                                sx={{ flex: 1, py: 1.25, borderRadius: 2, fontWeight: 700 }}
+                              >
+                                Some Students Are Absent
+                              </Button>
+                            </Stack>
                           </Box>
-                        </Box>
+
+                          {allPresentChecked === false ? (
+                            <div>
+                              <Typography variant="overline" color="error.main" sx={{ display: 'block', mb: 2, fontWeight: 'bold' }}>
+                                Tell us who is away today
+                              </Typography>
+                              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: { xs: 1.5, md: 2 }, mb: 3 }}>
+                                {ROSTER_FIELDS.map((field) => {
+                                  const rosterTotal = rosterTotals[field.rosterKey] ?? 0;
+                                  const absentEntered = num(formData[field.absentKey]);
+                                  const computedPresent = Math.max(0, rosterTotal - absentEntered);
+                                  const exceedsRoster = absentEntered > rosterTotal && formData[field.absentKey] !== '';
+                                  
+                                  return (
+                                    <Box key={field.absentKey}>
+                                      <TextField
+                                        fullWidth
+                                        label={`${field.label} — how many are away today?`}
+                                        type="number"
+                                        value={formData[field.absentKey]}
+                                        onChange={handleChange(field.absentKey)}
+                                        error={!!errors[field.absentKey] || exceedsRoster}
+                                        helperText={
+                                          exceedsRoster
+                                            ? `Cannot exceed roster total of ${rosterTotal}`
+                                            : errors[field.absentKey]
+                                            ? 'Required'
+                                            : `Roster: ${rosterTotal} | Present: ${computedPresent}`
+                                        }
+                                        color="error"
+                                        slotProps={{ input: { inputProps: { min: 0, max: rosterTotal } } }}
+                                        disabled={isEditMode && !canEdit}
+                                      />
+                                    </Box>
+                                  );
+                                })}
+                              </Box>
+                            </div>
+                          ) : (
+                            <div>
+                              {/* LEGACY MODE: Show all 8 fields for classes without valid roster */}
+                              <Typography variant="overline" color="success.main" sx={{ display: 'block', mb: 1 }}>
+                                Students Present
+                              </Typography>
+                              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: { xs: 1.5, md: 2 }, mb: 3 }}>
+                                {FIELDS.filter((f) => !f.isAbsent).map(({ key, label }) => (
+                                  <TextField key={key} fullWidth label={label} type="number" value={formData[key]} onChange={handleChange(key)} error={!!errors[key]} helperText={errors[key] ? 'Required' : ''} color="success" slotProps={{ input: { inputProps: { min: 0 } } }} disabled={isEditMode && !canEdit} />
+                                ))}
+                              </Box>
+
+                              <Typography variant="overline" color="error.main" sx={{ display: 'block', mb: 1 }}>
+                                Students Absent
+                              </Typography>
+                              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: { xs: 1.5, md: 2 }, mb: 3 }}>
+                                {FIELDS.filter((f) => f.isAbsent).map(({ key, label }) => (
+                                  <TextField key={key} fullWidth label={label} type="number" value={formData[key]} onChange={handleChange(key)} error={!!errors[key]} helperText={errors[key] ? 'Required' : ''} color="error" slotProps={{ input: { inputProps: { min: 0 } } }} disabled={isEditMode && !canEdit} />
+                                ))}
+                              </Box>
+                            </div>
+                          )}
+
+                          {isEditMode && !canEdit && (
+                            <Alert severity="warning" sx={{ mb: 2 }}>
+                              This roll call was submitted by another user. Only administrators can edit it.
+                            </Alert>
+                          )}
+
+                          <Divider sx={{ my: 3 }} />
+
+                          <Card variant="outlined" sx={{ mb: 3, borderRadius: 2, bgcolor: 'background.default' }}>
+                            <CardContent>
+                              <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                Live Summary
+                              </Typography>
+                              <Stack direction="row" sx={{ justifyContent: 'space-around', alignItems: 'center', textAlign: 'center', py: 1 }}>
+                                <Box>
+                                  <Typography variant="overline" color="text.secondary">Total Present</Typography>
+                                  <Typography sx={{ fontSize: { xs: '1.5rem', md: '2rem' }, fontWeight: 'bold', color: 'success.main' }}>{totalPresent}</Typography>
+                                </Box>
+                                <Divider orientation="vertical" flexItem />
+                                <Box>
+                                  <Typography variant="overline" color="text.secondary">Total Absent</Typography>
+                                  <Typography sx={{ fontSize: { xs: '1.5rem', md: '2rem' }, fontWeight: 'bold', color: 'error.main' }}>{totalAbsent}</Typography>
+                                </Box>
+                                <Divider orientation="vertical" flexItem />
+                                <Box>
+                                  <Typography variant="overline" color="text.secondary">Grand Total</Typography>
+                                  <Typography sx={{ fontSize: { xs: '1.5rem', md: '2rem' }, fontWeight: 'bold', color: 'primary.main' }}>{totalStudents}</Typography>
+                                </Box>
+                              </Stack>
+                            </CardContent>
+                          </Card>
+
+                          <Button type="submit" variant="contained" color="primary" fullWidth size="large" disabled={isSubmitting || !activeTerm || (isEditMode && !canEdit)} sx={{ py: 1.5, borderRadius: 2, fontSize: '1rem' }}>
+                            {isSubmitting ? <CircularProgress size={24} color="inherit" /> : isEditMode ? 'Update Roll Call' : 'Submit Roll Call'}
+                          </Button>
+                        </div>
                       ) : null}
-                    </>
-                  ) : (
-                    <>
-                      {/* LEGACY MODE: Show all 8 fields for classes without valid roster */}
-                      <Typography variant="overline" color="success.main" sx={{ display: 'block', mb: 1 }}>
-                        Students Present
-                      </Typography>
-                      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: { xs: 1.5, md: 2 }, mb: 3 }}>
-                        {FIELDS.filter((f) => !f.isAbsent).map(({ key, label }) => (
-                          <TextField key={key} fullWidth label={label} type="number" value={formData[key]} onChange={handleChange(key)} error={!!errors[key]} helperText={errors[key] ? 'Required' : ''} color="success" slotProps={{ input: { inputProps: { min: 0 } } }} disabled={isEditMode && !canEdit} />
-                        ))}
-                      </Box>
-
-                      <Typography variant="overline" color="error.main" sx={{ display: 'block', mb: 1 }}>
-                        Students Absent
-                      </Typography>
-                      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: { xs: 1.5, md: 2 }, mb: 3 }}>
-                        {FIELDS.filter((f) => f.isAbsent).map(({ key, label }) => (
-                          <TextField key={key} fullWidth label={label} type="number" value={formData[key]} onChange={handleChange(key)} error={!!errors[key]} helperText={errors[key] ? 'Required' : ''} color="error" slotProps={{ input: { inputProps: { min: 0 } } }} disabled={isEditMode && !canEdit} />
-                        ))}
-                      </Box>
-                    </>
+                    </div>
                   )}
-
-                  {isEditMode && !canEdit && (
-                    <Alert severity="warning" sx={{ mb: 2 }}>
-                      This roll call was submitted by another user. Only administrators can edit it.
-                    </Alert>
-                  )}
-
-                  <Divider sx={{ my: 3 }} />
-
-                  <Card variant="outlined" sx={{ mb: 3, borderRadius: 2, bgcolor: 'background.default' }}>
-                    <CardContent>
-                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                        Live Summary
-                      </Typography>
-                      <Stack direction="row" sx={{ justifyContent: 'space-around', alignItems: 'center', textAlign: 'center', py: 1 }}>
-                        <Box>
-                          <Typography variant="overline" color="text.secondary">Total Present</Typography>
-                          <Typography sx={{ fontSize: { xs: '1.5rem', md: '2rem' }, fontWeight: 'bold', color: 'success.main' }}>{totalPresent}</Typography>
-                        </Box>
-                        <Divider orientation="vertical" flexItem />
-                        <Box>
-                          <Typography variant="overline" color="text.secondary">Total Absent</Typography>
-                          <Typography sx={{ fontSize: { xs: '1.5rem', md: '2rem' }, fontWeight: 'bold', color: 'error.main' }}>{totalAbsent}</Typography>
-                        </Box>
-                        <Divider orientation="vertical" flexItem />
-                        <Box>
-                          <Typography variant="overline" color="text.secondary">Grand Total</Typography>
-                          <Typography sx={{ fontSize: { xs: '1.5rem', md: '2rem' }, fontWeight: 'bold', color: 'primary.main' }}>{totalStudents}</Typography>
-                        </Box>
-                      </Stack>
-                    </CardContent>
-                  </Card>
-
-                  <Button type="submit" variant="contained" color="primary" fullWidth size="large" disabled={isSubmitting || !activeTerm || (isEditMode && !canEdit)} sx={{ py: 1.5, borderRadius: 2, fontSize: '1rem' }}>
-                    {isSubmitting ? <CircularProgress size={24} color="inherit" /> : isEditMode ? 'Update Roll Call' : 'Submit Roll Call'}
-                  </Button>
                 </motion.div>
               )}
             </Box>
