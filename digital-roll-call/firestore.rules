@@ -26,8 +26,12 @@ service cloud.firestore {
 
     function isRecipientForNotification() {
       return isSignedIn() && (
-        request.auth.uid in resource.data.recipientKeys ||
-        callerData().role in resource.data.recipientKeys
+        resource != null &&
+        resource.data != null &&
+        (
+          request.auth.uid in resource.data.recipientKeys ||
+          callerData().role in resource.data.recipientKeys
+        )
       );
     }
 

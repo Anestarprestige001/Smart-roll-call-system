@@ -405,20 +405,24 @@ export default function SubmitAttendance() {
       await setDoc(doc(db, 'attendance_logs', docId), payload, { merge: isEditMode });
 
       if (!isEditMode) {
-        const weekOf = getCurrentWeekKey();
-        const dutyRosterRef = doc(db, 'dutyRoster', weekOf);
-        const dutyRosterSnap = await getDoc(dutyRosterRef);
-        const onDutyUserIds = dutyRosterSnap.exists() ? (dutyRosterSnap.data().onDutyUserIds || []) : [];
-        await writeNotification({
-          notificationId: `submitted_${selectedClassId}_${today}`,
-          type: 'submitted',
-          targetRoles: ['ADMIN'],
-          targetUserIds: onDutyUserIds,
-          payload: {
-            title: 'Attendance submitted',
-            message: `${selectedClass?.name || selectedClassId} attendance was submitted for ${today}.`,
-          },
-        });
+        try {
+          const weekOf = getCurrentWeekKey();
+          const dutyRosterRef = doc(db, 'dutyRoster', weekOf);
+          const dutyRosterSnap = await getDoc(dutyRosterRef);
+          const onDutyUserIds = dutyRosterSnap.exists() ? (dutyRosterSnap.data().onDutyUserIds || []) : [];
+          await writeNotification({
+            notificationId: `submitted_${selectedClassId}_${today}`,
+            type: 'submitted',
+            targetRoles: ['ADMIN'],
+            targetUserIds: onDutyUserIds,
+            payload: {
+              title: 'Attendance submitted',
+              message: `${selectedClass?.name || selectedClassId} attendance was submitted for ${today}.`,
+            },
+          });
+        } catch (notificationErr) {
+          console.error('Attendance submitted successfully, but notification step failed:', notificationErr);
+        }
       }
 
       setSnackbar({
@@ -572,7 +576,7 @@ export default function SubmitAttendance() {
                                 Tell us who is away today
                               </Typography>
                               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: { xs: 1.5, md: 2 }, mb: 3 }}>
-                                {ROSTER_FIELDS.map((field) => {
+                                {ROSTER_FIELDS.filter((field) => (rosterTotals[field.rosterKey] ?? 0) > 0).map((field) => {
                                   const rosterTotal = rosterTotals[field.rosterKey] ?? 0;
                                   const absentEntered = num(formData[field.absentKey]);
                                   const computedPresent = Math.max(0, rosterTotal - absentEntered);
@@ -598,6 +602,24 @@ export default function SubmitAttendance() {
                                         slotProps={{ input: { inputProps: { min: 0, max: rosterTotal } } }}
                                         disabled={isEditMode && !canEdit}
                                       />
+                                    </Box>
+                                  );
+                                })}
+                              </Box>
+                            </div>
+                          ) : allPresentChecked === true ? (
+                            <div>
+                              <Typography variant="overline" color="success.main" sx={{ display: 'block', mb: 2, fontWeight: 'bold' }}>
+                                Confirmed present counts
+                              </Typography>
+                              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: { xs: 1.5, md: 2 }, mb: 3 }}>
+                                {ROSTER_FIELDS.filter((field) => (rosterTotals[field.rosterKey] ?? 0) > 0).map((field) => {
+                                  const rosterTotal = rosterTotals[field.rosterKey] ?? 0;
+                                  return (
+                                    <Box key={field.rosterKey} sx={{ p: 1.5, border: '1px solid', borderColor: 'divider', borderRadius: 1, bgcolor: 'background.default' }}>
+                                      <Typography variant="body1" color="text.primary" sx={{ fontWeight: 600 }}>
+                                        {`${field.label}: ${rosterTotal} present`}
+                                      </Typography>
                                     </Box>
                                   );
                                 })}
