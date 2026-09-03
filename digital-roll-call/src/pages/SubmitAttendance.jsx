@@ -570,7 +570,9 @@ export default function SubmitAttendance() {
                             </Stack>
                           </Box>
 
-                          {allPresentChecked === false ? (
+                          {hasValidRoster && allPresentChecked === null ? null : null}
+
+                          {hasValidRoster && allPresentChecked === false ? (
                             <div>
                               <Typography variant="overline" color="error.main" sx={{ display: 'block', mb: 2, fontWeight: 'bold' }}>
                                 Tell us who is away today
@@ -607,7 +609,7 @@ export default function SubmitAttendance() {
                                 })}
                               </Box>
                             </div>
-                          ) : allPresentChecked === true ? (
+                          ) : hasValidRoster && allPresentChecked === true ? (
                             <div>
                               <Typography variant="overline" color="success.main" sx={{ display: 'block', mb: 2, fontWeight: 'bold' }}>
                                 Confirmed present counts
@@ -625,7 +627,7 @@ export default function SubmitAttendance() {
                                 })}
                               </Box>
                             </div>
-                          ) : (
+                          ) : !hasValidRoster ? (
                             <div>
                               {/* LEGACY MODE: Show all 8 fields for classes without valid roster */}
                               <Typography variant="overline" color="success.main" sx={{ display: 'block', mb: 1 }}>
@@ -646,7 +648,7 @@ export default function SubmitAttendance() {
                                 ))}
                               </Box>
                             </div>
-                          )}
+                          ) : null}
 
                           {isEditMode && !canEdit && (
                             <Alert severity="warning" sx={{ mb: 2 }}>
